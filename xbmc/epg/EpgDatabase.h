@@ -19,12 +19,18 @@
  *
  */
 
-#include "dbwrappers/Database.h"
+#include <map>
+#include <memory>
+
 #include "XBDateTime.h"
+#include "dbwrappers/Database.h"
+
+#include "Epg.h"
 
 namespace EPG
 {
   class CEpg;
+  typedef std::shared_ptr<CEpg> CEpgPtr;
   class CEpgInfoTag;
   class CEpgContainer;
 
@@ -53,7 +59,7 @@ namespace EPG
      * @brief Get the minimal database version that is required to operate correctly.
      * @return The minimal database version.
      */
-    virtual int GetSchemaVersion(void) const { return 7; };
+    virtual int GetSchemaVersion(void) const { return 11; };
 
     /*!
      * @brief Get the default sqlite database filename.
@@ -120,7 +126,7 @@ namespace EPG
      */
     virtual bool PersistLastEpgScanTime(int iEpgId = 0, bool bQueueWrite = false);
 
-    bool Persist(const CEpgContainer &epg);
+    bool Persist(const EPGMAP &epgs);
 
     /*!
      * @brief Persist an EPG table. It's entries are not persisted.

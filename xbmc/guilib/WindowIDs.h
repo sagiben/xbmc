@@ -56,6 +56,8 @@
 
 #define WINDOW_ADDON_BROWSER              10040
 
+#define WINDOW_EVENT_LOG                  10050
+
 #define WINDOW_SCREENSAVER_DIM               97
 #define WINDOW_DEBUG_INFO                    98
 #define WINDOW_DIALOG_POINTER             10099
@@ -93,17 +95,16 @@
 #define WINDOW_DIALOG_ADDON_SETTINGS      10140
 #define WINDOW_DIALOG_ACCESS_POINTS       10141
 #define WINDOW_DIALOG_FULLSCREEN_INFO     10142
-#define WINDOW_DIALOG_KARAOKE_SONGSELECT  10143
-#define WINDOW_DIALOG_KARAOKE_SELECTOR    10144
 #define WINDOW_DIALOG_SLIDER              10145
 #define WINDOW_DIALOG_ADDON_INFO          10146
 #define WINDOW_DIALOG_TEXT_VIEWER         10147
 #define WINDOW_DIALOG_PLAY_EJECT          10148
-#define WINDOW_DIALOG_PERIPHERAL_MANAGER  10149
 #define WINDOW_DIALOG_PERIPHERAL_SETTINGS 10150
 #define WINDOW_DIALOG_EXT_PROGRESS        10151
 #define WINDOW_DIALOG_MEDIA_FILTER        10152
 #define WINDOW_DIALOG_SUBTITLES           10153
+#define WINDOW_DIALOG_AUDIO_DSP_MANAGER   10154
+#define WINDOW_DIALOG_AUDIO_DSP_OSD_SETTINGS 10155
 
 #define WINDOW_MUSIC_PLAYLIST             10500
 #define WINDOW_MUSIC_FILES                10501
@@ -113,7 +114,6 @@
 #define WINDOW_DIALOG_OSD_TELETEXT        10600
 
 // PVR related Window and Dialog ID's
-#define WINDOW_PVR                        10601
 #define WINDOW_DIALOG_PVR_GUIDE_INFO      10602
 #define WINDOW_DIALOG_PVR_RECORDING_INFO  10603
 #define WINDOW_DIALOG_PVR_TIMER_SETTING   10604
@@ -124,12 +124,23 @@
 #define WINDOW_DIALOG_PVR_UPDATE_PROGRESS 10609
 #define WINDOW_DIALOG_PVR_OSD_CHANNELS    10610
 #define WINDOW_DIALOG_PVR_OSD_GUIDE       10611
-#define WINDOW_DIALOG_PVR_OSD_DIRECTOR    10612
-#define WINDOW_DIALOG_PVR_OSD_CUTTER      10613
 #define WINDOW_FULLSCREEN_LIVETV          10614 // virtual window for PVR specific keymap bindings in fullscreen playback (which internally uses WINDOW_FULLSCREEN_VIDEO)
-// PVR_WINDOW VIEWS = 10694-10699
+#define WINDOW_TV_CHANNELS                10615
+#define WINDOW_TV_RECORDINGS              10616
+#define WINDOW_TV_GUIDE                   10617
+#define WINDOW_TV_TIMERS                  10618
+#define WINDOW_TV_SEARCH                  10619
+#define WINDOW_RADIO_CHANNELS             10620
+#define WINDOW_RADIO_RECORDINGS           10621
+#define WINDOW_RADIO_GUIDE                10622
+#define WINDOW_RADIO_TIMERS               10623
+#define WINDOW_RADIO_SEARCH               10624
+#define WINDOW_FULLSCREEN_RADIO           10625 // virtual window for PVR radio specific keymaps with fallback to WINDOW_VISUALISATION
+#define WINDOW_DIALOG_PVR_RADIO_RDS_INFO  10626
 
 //#define WINDOW_VIRTUAL_KEYBOARD           11000
+// WINDOW_ID's from 11100 to 11199 reserved for Skins
+
 #define WINDOW_DIALOG_SELECT              12000
 #define WINDOW_DIALOG_MUSIC_INFO          12001
 #define WINDOW_DIALOG_OK                  12002
@@ -137,8 +148,6 @@
 #define WINDOW_FULLSCREEN_VIDEO           12005
 #define WINDOW_VISUALISATION              12006
 #define WINDOW_SLIDESHOW                  12007
-#define WINDOW_DIALOG_FILESTACKING        12008
-#define WINDOW_KARAOKELYRICS              12009
 #define WINDOW_WEATHER                    12600
 #define WINDOW_SCREENSAVER                12900
 #define WINDOW_DIALOG_VIDEO_OSD           12901
@@ -148,6 +157,7 @@
 #define WINDOW_DIALOG_VIDEO_OVERLAY       12904
 #define WINDOW_VIDEO_TIME_SEEK            12905 // virtual window for time seeking during fullscreen video
 
+#define WINDOW_SPLASH                     12997 // splash window
 #define WINDOW_START                      12998 // first window to load
 #define WINDOW_STARTUP_ANIM               12999 // for startup animations
 

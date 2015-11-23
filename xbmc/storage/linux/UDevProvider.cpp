@@ -138,6 +138,13 @@ void CUDevProvider::GetDisks(VECSOURCES& disks, bool removable)
       continue;
     }
 
+    // filter out root partition
+    if (strcmp(mountpoint, "/") == 0)
+    {
+      udev_device_unref(device);
+      continue;
+    }
+
     // filter out things mounted on /tmp
     if (strstr(mountpoint, "/tmp"))
     {
@@ -145,25 +152,42 @@ void CUDevProvider::GetDisks(VECSOURCES& disks, bool removable)
       continue;
     }
 
-    // look for usb devices on the usb bus, or mounted on /media/usbX (sdcards) or cdroms
+    // look for devices on the usb bus, or mounted on */media/ (sdcards), or optical devices
     const char *bus = udev_device_get_property_value(device, "ID_BUS");
-    const char *cdrom = udev_device_get_property_value(device, "ID_CDROM");
-    if (removable  &&
-      ((bus        && strstr(bus, "usb")) ||
-       (cdrom      && strstr(cdrom,"1"))  ||
-       (mountpoint && strstr(mountpoint, "/media/"))))
-    {
-      const char *label = udev_device_get_property_value(device, "ID_FS_LABEL");
-      if (!label)
-        label = URIUtils::GetFileName(mountpoint);
+    const char *optical = udev_device_get_property_value(device, "ID_CDROM"); // matches also DVD, Blu-ray
+    bool isRemovable = ((bus        && strstr(bus, "usb")) ||
+                        (optical    && strstr(optical,"1"))  ||
+                        (mountpoint && strstr(mountpoint, "/media/")));
 
-      CMediaSource share;
-      share.strName  = label;
-      share.strPath  = mountpoint;
-      share.m_ignore = true;
-      share.m_iDriveType = CMediaSource::SOURCE_TYPE_REMOVABLE;
-      AddOrReplace(disks, share);
+    // filter according to requested device type
+    if (removable != isRemovable)
+    {
+      udev_device_unref(device);
+      continue;
     }
+
+    const char *udev_label = udev_device_get_property_value(device, "ID_FS_LABEL");
+    std::string label;
+    if (udev_label)
+      label = udev_label;
+    else
+      label = URIUtils::GetFileName(mountpoint);
+
+    CMediaSource share;
+    share.strName  = label;
+    share.strPath  = mountpoint;
+    share.m_ignore = true;
+    if (isRemovable)
+    {
+      if (optical)
+        share.m_iDriveType = CMediaSource::SOURCE_TYPE_DVD;
+      else
+        share.m_iDriveType = CMediaSource::SOURCE_TYPE_REMOVABLE;
+    }
+    else
+      share.m_iDriveType = CMediaSource::SOURCE_TYPE_LOCAL;
+
+    disks.push_back(share);
     udev_device_unref(device);
   }
   udev_enumerate_unref(u_enum);
@@ -179,12 +203,20 @@ void CUDevProvider::GetRemovableDrives(VECSOURCES &removableDrives)
   GetDisks(removableDrives, true);
 }
 
-bool CUDevProvider::Eject(CStdString mountpath)
+bool CUDevProvider::Eject(const std::string& mountpath)
 {
+  // just go ahead and try to umount the disk
+  // if it does umount, life is good, if not, no loss.
+  std::string cmd = "umount \"" + mountpath + "\"";
+  int status = system(cmd.c_str());
+
+  if (status == 0)
+    return true;
+
   return false;
 }
 
-std::vector<CStdString> CUDevProvider::GetDiskUsage()
+std::vector<std::string> CUDevProvider::GetDiskUsage()
 {
   CPosixMountProvider legacy;
   return legacy.GetDiskUsage();
@@ -211,27 +243,46 @@ bool CUDevProvider::PumpDriveChangeEvents(IStorageEventsCallback *callback)
       return false;
 
     const char *action  = udev_device_get_action(dev);
-    const char *devtype = udev_device_get_devtype(dev);
     if (action)
     {
-      const char *label = udev_device_get_property_value(dev, "ID_FS_LABEL");
+      std::string label;
+      const char *udev_label = udev_device_get_property_value(dev, "ID_FS_LABEL");
       const char *mountpoint = get_mountpoint(udev_device_get_devnode(dev));
-      if (!label)
+      if (udev_label)
+        label = udev_label;
+      else if (mountpoint)
         label = URIUtils::GetFileName(mountpoint);
 
-      if (!strcmp(action, "add") && !strcmp(devtype, "partition"))
+      const char *fs_usage = udev_device_get_property_value(dev, "ID_FS_USAGE");
+      if (mountpoint && strcmp(action, "add") == 0 && (fs_usage && strcmp(fs_usage, "filesystem") == 0))
       {
         CLog::Log(LOGNOTICE, "UDev: Added %s", mountpoint);
         if (callback)
           callback->OnStorageAdded(label, mountpoint);
         changed = true;
       }
-      if (!strcmp(action, "remove") && !strcmp(devtype, "partition"))
+      if (strcmp(action, "remove") == 0 && (fs_usage && strcmp(fs_usage, "filesystem") == 0))
       {
-        CLog::Log(LOGNOTICE, "UDev: Removed %s", mountpoint);
         if (callback)
           callback->OnStorageSafelyRemoved(label);
         changed = true;
+      }
+      if (strcmp(action, "change") == 0)
+      {
+        if (mountpoint)
+        {
+          CLog::Log(LOGNOTICE, "UDev: Changed / Added %s", mountpoint);
+          if (callback)
+            callback->OnStorageAdded(label, mountpoint);
+          changed = true;
+        }
+        const char *eject_request = udev_device_get_property_value(dev, "DISK_EJECT_REQUEST");
+        if (eject_request && strcmp(eject_request, "1") == 0)
+        {
+          if (callback)
+            callback->OnStorageSafelyRemoved(label);
+          changed = true;
+        }
       }
     }
     udev_device_unref(dev);

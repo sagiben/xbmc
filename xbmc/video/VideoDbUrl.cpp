@@ -24,7 +24,6 @@
 #include "utils/StringUtils.h"
 #include "utils/Variant.h"
 
-using namespace std;
 using namespace XFILE;
 
 CVideoDbUrl::CVideoDbUrl()
@@ -37,10 +36,10 @@ CVideoDbUrl::~CVideoDbUrl()
 bool CVideoDbUrl::parse()
 {
   // the URL must start with videodb://
-  if (m_url.GetProtocol() != "videodb" || m_url.GetFileName().empty())
+  if (!m_url.IsProtocol("videodb") || m_url.GetFileName().empty())
     return false;
 
-  CStdString path = m_url.Get();
+  std::string path = m_url.Get();
   VIDEODATABASEDIRECTORY::NODE_TYPE dirType = CVideoDatabaseDirectory::GetDirectoryType(path);
   VIDEODATABASEDIRECTORY::NODE_TYPE childType = CVideoDatabaseDirectory::GetDirectoryChildType(path);
 

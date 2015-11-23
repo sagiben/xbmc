@@ -21,10 +21,11 @@
 #include "Keyboard.h"
 #include "LanguageHook.h"
 
-#include "guilib/GUIWindowManager.h"
 #include "guilib/GUIKeyboardFactory.h"
-#include "dialogs/GUIDialogKeyboardGeneric.h"
-#include "ApplicationMessenger.h"
+#include "utils/Variant.h"
+#include "messaging/ApplicationMessenger.h"
+
+using namespace KODI::MESSAGING;
 
 namespace XBMCAddon
 {
@@ -43,8 +44,8 @@ namespace XBMCAddon
       DelayedCallGuard dg(languageHook);
       // using keyboardfactory method to get native keyboard if there is.
       strText = strDefault;
-      CStdString text(strDefault);
-      bConfirmed = CGUIKeyboardFactory::ShowAndGetInput(text, strHeading, true, bHidden, autoclose * 1000);
+      std::string text(strDefault);
+      bConfirmed = CGUIKeyboardFactory::ShowAndGetInput(text, CVariant{strHeading}, true, bHidden, autoclose * 1000);
       strText = text;
     }
 

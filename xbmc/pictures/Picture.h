@@ -18,7 +18,11 @@
  *  <http://www.gnu.org/licenses/>.
  *
  */
-#include "utils/StdString.h"
+
+#include <string>
+#include <vector>
+
+#include "pictures/PictureScalingAlgorithm.h"
 #include "utils/Job.h"
 
 class CBaseTexture;
@@ -26,13 +30,21 @@ class CBaseTexture;
 class CPicture
 {
 public:
-  static bool CreateThumbnailFromSurface(const unsigned char* buffer, int width, int height, int stride, const CStdString &thumbFile);
+  static bool GetThumbnailFromSurface(const unsigned char* buffer, int width, int height, int stride, const std::string &thumbFile, uint8_t* &result, size_t& result_size);
+  static bool CreateThumbnailFromSurface(const unsigned char* buffer, int width, int height, int stride, const std::string &thumbFile);
 
   /*! \brief Create a tiled thumb of the given files
    \param files the files to create the thumb from
    \param thumb the filename of the thumb
    */
   static bool CreateTiledThumb(const std::vector<std::string> &files, const std::string &thumb);
+
+  static bool ResizeTexture(const std::string &image, CBaseTexture *texture,
+    uint32_t &dest_width, uint32_t &dest_height, uint8_t* &result, size_t& result_size,
+    CPictureScalingAlgorithm::Algorithm scalingAlgorithm = CPictureScalingAlgorithm::NoAlgorithm);
+  static bool ResizeTexture(const std::string &image, uint8_t *pixels, uint32_t width, uint32_t height, uint32_t pitch,
+    uint32_t &dest_width, uint32_t &dest_height, uint8_t* &result, size_t& result_size,
+    CPictureScalingAlgorithm::Algorithm scalingAlgorithm = CPictureScalingAlgorithm::NoAlgorithm);
 
   /*! \brief Cache a texture, resizing, rotating and flipping as needed, and saving as a JPG or PNG
    \param texture a pointer to a CBaseTexture
@@ -41,13 +53,17 @@ public:
    \param dest the output cache file
    \return true if successful, false otherwise
    */
-  static bool CacheTexture(CBaseTexture *texture, uint32_t &dest_width, uint32_t &dest_height, const std::string &dest);
-  static bool CacheTexture(uint8_t *pixels, uint32_t width, uint32_t height, uint32_t pitch, int orientation, uint32_t &dest_width, uint32_t &dest_height, const std::string &dest);
+  static bool CacheTexture(CBaseTexture *texture, uint32_t &dest_width, uint32_t &dest_height, const std::string &dest,
+    CPictureScalingAlgorithm::Algorithm scalingAlgorithm = CPictureScalingAlgorithm::NoAlgorithm);
+  static bool CacheTexture(uint8_t *pixels, uint32_t width, uint32_t height, uint32_t pitch, int orientation,
+    uint32_t &dest_width, uint32_t &dest_height, const std::string &dest,
+    CPictureScalingAlgorithm::Algorithm scalingAlgorithm = CPictureScalingAlgorithm::NoAlgorithm);
 
 private:
   static void GetScale(unsigned int width, unsigned int height, unsigned int &out_width, unsigned int &out_height);
   static bool ScaleImage(uint8_t *in_pixels, unsigned int in_width, unsigned int in_height, unsigned int in_pitch,
-                         uint8_t *out_pixels, unsigned int out_width, unsigned int out_height, unsigned int out_pitch);
+                         uint8_t *out_pixels, unsigned int out_width, unsigned int out_height, unsigned int out_pitch,
+                         CPictureScalingAlgorithm::Algorithm scalingAlgorithm = CPictureScalingAlgorithm::NoAlgorithm);
   static bool OrientateImage(uint32_t *&pixels, unsigned int &width, unsigned int &height, int orientation);
 
   static bool FlipHorizontal(uint32_t *&pixels, unsigned int &width, unsigned int &height);
@@ -64,7 +80,8 @@ class CThumbnailWriter : public CJob
 {
   public:
     //WARNING: buffer is deleted from DoWork()
-    CThumbnailWriter(unsigned char* buffer, int width, int height, int stride, const CStdString& thumbFile);
+    CThumbnailWriter(unsigned char* buffer, int width, int height, int stride, const std::string& thumbFile);
+    ~CThumbnailWriter();
     bool DoWork();
 
   private:
@@ -72,6 +89,6 @@ class CThumbnailWriter : public CJob
     int            m_width;
     int            m_height;
     int            m_stride;
-    CStdString     m_thumbFile;
+    std::string    m_thumbFile;
 };
 

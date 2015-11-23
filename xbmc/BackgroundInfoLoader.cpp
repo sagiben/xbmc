@@ -20,11 +20,8 @@
 
 #include "BackgroundInfoLoader.h"
 #include "FileItem.h"
-#include "settings/AdvancedSettings.h"
 #include "threads/SingleLock.h"
 #include "utils/log.h"
-
-using namespace std;
 
 CBackgroundInfoLoader::CBackgroundInfoLoader() : m_thread (NULL)
 {
@@ -49,7 +46,7 @@ void CBackgroundInfoLoader::Run()
       OnLoaderStart();
 
       // Stage 1: All "fast" stuff we have already cached
-      for (vector<CFileItemPtr>::const_iterator iter = m_vecItems.begin(); iter != m_vecItems.end(); ++iter)
+      for (std::vector<CFileItemPtr>::const_iterator iter = m_vecItems.begin(); iter != m_vecItems.end(); ++iter)
       {
         CFileItemPtr pItem = *iter;
 
@@ -69,7 +66,7 @@ void CBackgroundInfoLoader::Run()
       }
 
       // Stage 2: All "slow" stuff that we need to lookup
-      for (vector<CFileItemPtr>::const_iterator iter = m_vecItems.begin(); iter != m_vecItems.end(); ++iter)
+      for (std::vector<CFileItemPtr>::const_iterator iter = m_vecItems.begin(); iter != m_vecItems.end(); ++iter)
       {
         CFileItemPtr pItem = *iter;
 
@@ -117,9 +114,7 @@ void CBackgroundInfoLoader::Load(CFileItemList& items)
 
   m_thread = new CThread(this, "BackgroundLoader");
   m_thread->Create();
-#ifndef TARGET_POSIX
   m_thread->SetPriority(THREAD_PRIORITY_BELOW_NORMAL);
-#endif
 }
 
 void CBackgroundInfoLoader::StopAsync()

@@ -28,15 +28,27 @@
  *
  */
 
-#include "GUIWindow.h"
-#include "IWindowManagerCallback.h"
-#include "IMsgTargetCallback.h"
-#include "DirtyRegionTracker.h"
-#include "utils/GlobalsHandling.h"
-#include "guilib/WindowIDs.h"
 #include <list>
+#include <utility>
+
+#include "DirtyRegionTracker.h"
+#include "guilib/WindowIDs.h"
+#include "GUIWindow.h"
+#include "IMsgTargetCallback.h"
+#include "IWindowManagerCallback.h"
+#include "messaging/IMessageTarget.h"
+#include "utils/GlobalsHandling.h"
 
 class CGUIDialog;
+enum class DialogModalityType;
+
+namespace KODI
+{
+  namespace MESSAGING
+  {
+    class CApplicationMessenger;
+  }
+}
 
 #define WINDOW_ID_MASK 0xffff
 
@@ -44,7 +56,7 @@ class CGUIDialog;
  \ingroup winman
  \brief
  */
-class CGUIWindowManager
+class CGUIWindowManager : public KODI::MESSAGING::IMessageTarget
 {
 public:
   CGUIWindowManager(void);
@@ -58,12 +70,17 @@ public:
   void AddCustomWindow(CGUIWindow* pWindow);
   void Remove(int id);
   void Delete(int id);
-  void ActivateWindow(int iWindowID, const CStdString &strPath = "");
-  void ChangeActiveWindow(int iNewID, const CStdString &strPath = "");
-  void ActivateWindow(int iWindowID, const std::vector<CStdString>& params, bool swappingWindows = false);
+  void ActivateWindow(int iWindowID, const std::string &strPath = "");
+  void ForceActivateWindow(int iWindowID, const std::string &strPath = "");
+  void ChangeActiveWindow(int iNewID, const std::string &strPath = "");
+  void ActivateWindow(int iWindowID, const std::vector<std::string>& params, bool swappingWindows = false, bool force = false);
   void PreviousWindow();
 
   void CloseDialogs(bool forceClose = false) const;
+  void CloseInternalModalDialogs(bool forceClose = false) const;
+
+  virtual void OnApplicationMessage(KODI::MESSAGING::ThreadMessage* pMsg) override;
+  virtual int GetMessageMask() override;
 
   // OnAction() runs through our active dialogs and windows and sends the message
   // off to the callbacks (application, python, playlist player) and to the
@@ -93,6 +110,8 @@ public:
    */
   bool Render();
 
+  void RenderEx() const;
+
   /*! \brief Do any post render activities.
    */
   void AfterRender();
@@ -110,13 +129,26 @@ public:
    */
   bool Initialized() const { return m_initialized; };
 
+  /*! \brief Create and initialize all windows and dialogs
+   */
+  void CreateWindows();
+
+  /*! \brief Destroy and remove all windows and dialogs
+  *
+  * \return true on success, false if destruction fails for any window
+  */
+  bool DestroyWindows();
+
   CGUIWindow* GetWindow(int id) const;
   void ProcessRenderLoop(bool renderOnly = false);
   void SetCallback(IWindowManagerCallback& callback);
   void DeInitialize();
 
-  void RouteToWindow(CGUIWindow* dialog);
-  void AddModeless(CGUIWindow* dialog);
+  /*! \brief Register a dialog as active dialog
+   *
+   * \param dialog The dialog to register as active dialog
+   */
+  void RegisterDialog(CGUIWindow* dialog);
   void RemoveDialog(int id);
   int GetTopMostModalDialogID(bool ignoreClosing = false) const;
 
@@ -127,17 +159,26 @@ public:
   int RemoveThreadMessageByMessageIds(int *pMessageIDList);
   void AddMsgTarget( IMsgTargetCallback* pMsgTarget );
   int GetActiveWindow() const;
+  int GetActiveWindowID();
   int GetFocusedWindow() const;
-  bool HasModalDialog() const;
+  bool HasModalDialog(const std::vector<DialogModalityType>& types = std::vector<DialogModalityType>()) const;
   bool HasDialogOnScreen() const;
   bool IsWindowActive(int id, bool ignoreClosing = true) const;
   bool IsWindowVisible(int id) const;
   bool IsWindowTopMost(int id) const;
-  bool IsWindowActive(const CStdString &xmlFile, bool ignoreClosing = true) const;
-  bool IsWindowVisible(const CStdString &xmlFile) const;
-  bool IsWindowTopMost(const CStdString &xmlFile) const;
-  bool IsOverlayAllowed() const;
-  void ShowOverlay(CGUIWindow::OVERLAY_STATE state);
+  bool IsWindowActive(const std::string &xmlFile, bool ignoreClosing = true) const;
+  bool IsWindowVisible(const std::string &xmlFile) const;
+  bool IsWindowTopMost(const std::string &xmlFile) const;
+  /*! \brief Checks if the given window is an addon window.
+   *
+   * \return true if the given window is an addon window, otherwise false.
+   */
+  bool IsAddonWindow(int id) const { return (id >= WINDOW_ADDON_START && id <= WINDOW_ADDON_END); };
+  /*! \brief Checks if the given window is a python window.
+   *
+   * \return true if the given window is a python window, otherwise false.
+   */
+  bool IsPythonWindow(int id) const { return (id >= WINDOW_PYTHON_START && id <= WINDOW_PYTHON_END); };
   void GetActiveModelessWindows(std::vector<int> &ids);
 #ifdef _DEBUG
   void DumpTextureUse();
@@ -147,14 +188,21 @@ private:
 
   void LoadNotOnDemandWindows();
   void UnloadNotOnDemandWindows();
-  void HideOverlay(CGUIWindow::OVERLAY_STATE state);
   void AddToWindowHistory(int newWindowID);
   void ClearWindowHistory();
   void CloseWindowSync(CGUIWindow *window, int nextWindowID = 0);
   CGUIWindow *GetTopMostDialog() const;
 
-  friend class CApplicationMessenger;
-  void ActivateWindow_Internal(int windowID, const std::vector<CStdString> &params, bool swappingWindows);
+  friend class KODI::MESSAGING::CApplicationMessenger;
+  
+  /*! \brief Activate the given window.
+   *
+   * \param windowID The window ID to activate.
+   * \param params Parameter
+   * \param swappingWindows True if the window should be swapped with the previous window instead of put it in the window history, otherwise false
+   * \param force True to ignore checks which refuses opening the window, otherwise false
+   */
+  void ActivateWindow_Internal(int windowID, const std::vector<std::string> &params, bool swappingWindows, bool force = false);
 
   typedef std::map<int, CGUIWindow *> WindowMap;
   WindowMap m_mapWindows;
@@ -173,7 +221,6 @@ private:
   CCriticalSection m_critSection;
   std::vector <IMsgTargetCallback*> m_vecMsgTargets;
 
-  bool m_bShowOverlay;
   int  m_iNested;
   bool m_initialized;
 

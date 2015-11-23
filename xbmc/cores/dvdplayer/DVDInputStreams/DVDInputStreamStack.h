@@ -21,7 +21,7 @@
  */
 
 #include "DVDInputStream.h"
-#include "boost/shared_ptr.hpp"
+#include <memory>
 
 class CDVDInputStreamStack : public CDVDInputStream
 {
@@ -29,7 +29,7 @@ public:
   CDVDInputStreamStack();
   virtual ~CDVDInputStreamStack();
 
-  virtual bool    Open(const char* path, const std::string &content);
+  virtual bool    Open(const char* path, const std::string &content, bool contentLookup);
   virtual void    Close();
   virtual int     Read(uint8_t* buf, int buf_size);
   virtual int64_t Seek(int64_t offset, int whence);
@@ -39,7 +39,7 @@ public:
 
 protected:
 
-  typedef boost::shared_ptr<XFILE::CFile> TFile;
+  typedef std::shared_ptr<XFILE::CFile> TFile;
 
   struct TSeg
   {

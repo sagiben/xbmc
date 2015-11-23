@@ -24,9 +24,9 @@
 #include "JSONRPC.h"
 #include "JSONUtils.h"
 #include "FileItem.h"
-#include "utils/StdString.h"
 
 class CThumbLoader;
+class CVariant;
 
 namespace JSONRPC
 {

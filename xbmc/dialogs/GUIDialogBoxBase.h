@@ -23,33 +23,34 @@
 #include <vector>
 
 #include "guilib/GUIDialog.h"
-#include "utils/Variant.h"
 #include "threads/CriticalSection.h"
 
 #define DIALOG_MAX_LINES 3
 #define DIALOG_MAX_CHOICES 2
 
+class CVariant;
+
 class CGUIDialogBoxBase :
       public CGUIDialog
 {
 public:
-  CGUIDialogBoxBase(int id, const CStdString &xmlFile);
+  CGUIDialogBoxBase(int id, const std::string &xmlFile);
   virtual ~CGUIDialogBoxBase(void);
   virtual bool OnMessage(CGUIMessage& message);
   bool IsConfirmed() const;
-  void SetLine(unsigned int iLine, const CVariant &line);
-  void SetText(const CVariant &text);
-  void SetHeading(const CVariant &heading);
+  void SetLine(unsigned int iLine, CVariant line);
+  void SetText(CVariant text);
+  void SetHeading(CVariant heading);
   void SetChoice(int iButton, const CVariant &choice);
 protected:
-  CStdString GetDefaultLabel(int controlId) const;
+  std::string GetDefaultLabel(int controlId) const;
   virtual int GetDefaultLabelID(int controlId) const;
   /*! \brief Get a localized string from a variant
    If the varaint is already a string we return directly, else if it's an integer we return the corresponding
    localized string.
    \param var the variant to localize.
    */
-  CStdString GetLocalized(const CVariant &var) const;
+  std::string GetLocalized(const CVariant &var) const;
 
   virtual void Process(unsigned int currentTime, CDirtyRegionList &dirtyregions);
   virtual void OnInitWindow();

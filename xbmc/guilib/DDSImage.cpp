@@ -18,9 +18,10 @@
  *
  */
 
+#include <algorithm>
 #include "DDSImage.h"
 #include "XBTF.h"
-#include "libsquish/squish.h"
+#include <squish.h>
 #include "utils/log.h"
 #include <string.h>
 
@@ -30,8 +31,6 @@ using namespace XFILE;
 #else
 #include "SimpleFS.h"
 #endif
-
-using namespace std;
 
 CDDSImage::CDDSImage()
 {
@@ -125,7 +124,7 @@ bool CDDSImage::Create(const std::string &outputFile, unsigned int width, unsign
   { // use ARGB
     Allocate(width, height, XB_FMT_A8R8G8B8);
     for (unsigned int i = 0; i < height; i++)
-      memcpy(m_data + i * width * 4, brga + i * pitch, min(width * 4, pitch));
+      memcpy(m_data + i * width * 4, brga + i * pitch, std::min(width * 4, pitch));
   }
   return WriteFile(outputFile);
 }
@@ -138,12 +137,10 @@ bool CDDSImage::WriteFile(const std::string &outputFile) const
     return false;
 
   // write the header
-  file.Write("DDS ", 4);
-  file.Write(&m_desc, sizeof(m_desc));
+  return file.Write("DDS ", 4) == 4 &&
+    file.Write(&m_desc, sizeof(m_desc)) == sizeof(m_desc) &&
   // now the data
-  file.Write(m_data, m_desc.linearSize);
-  file.Close();
-  return true;
+    file.Write(m_data, m_desc.linearSize) == m_desc.linearSize;
 }
 
 unsigned int CDDSImage::GetStorageRequirements(unsigned int width, unsigned int height, unsigned int format)

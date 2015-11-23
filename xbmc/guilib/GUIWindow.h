@@ -29,13 +29,14 @@
  */
 
 #include "GUIControlGroup.h"
-#include "boost/shared_ptr.hpp"
+#include <memory>
 #include "threads/CriticalSection.h"
 
-class CFileItem; typedef boost::shared_ptr<CFileItem> CFileItemPtr;
+class CFileItem; typedef std::shared_ptr<CFileItem> CFileItemPtr;
 
 #include "GUICallback.h"  // for GUIEvent
 
+#include <limits.h>
 #include <map>
 #include <vector>
 
@@ -50,6 +51,15 @@ class CFileItem; typedef boost::shared_ptr<CFileItem> CFileItemPtr;
  GUIEventHandler<c, CGUIMessage&> selectedHandler(this, &m); \
  m_mapSelectedEvents[i] = selectedHandler; \
 } \
+
+enum RenderOrder {
+  RENDER_ORDER_WINDOW = 0,
+  RENDER_ORDER_DIALOG = 1,
+  RENDER_ORDER_WINDOW_SCREENSAVER = INT_MAX,
+  RENDER_ORDER_WINDOW_POINTER = INT_MAX - 1,
+  RENDER_ORDER_WINDOW_DEBUG = INT_MAX - 2,
+  RENDER_ORDER_DIALOG_TELETEXT = INT_MAX - 3
+};
 
 // forward
 class TiXmlNode;
@@ -76,15 +86,13 @@ public:
 class CGUIWindow : public CGUIControlGroup, protected CCriticalSection
 {
 public:
-
-  enum WINDOW_TYPE { WINDOW = 0, MODAL_DIALOG, MODELESS_DIALOG, BUTTON_MENU, SUB_MENU };
   enum LOAD_TYPE { LOAD_EVERY_TIME, LOAD_ON_GUI_INIT, KEEP_IN_MEMORY };
 
-  CGUIWindow(int id, const CStdString &xmlFile);
+  CGUIWindow(int id, const std::string &xmlFile);
   virtual ~CGUIWindow(void);
 
   bool Initialize();  // loads the window
-  bool Load(const CStdString& strFileName, bool bContainsPath = false);
+  bool Load(const std::string& strFileName, bool bContainsPath = false);
 
   void CenterWindow();
 
@@ -119,6 +127,7 @@ public:
   virtual bool OnAction(const CAction &action);
   
   virtual bool OnBack(int actionID);
+  virtual bool OnInfo(int actionID) { return false; };
 
   /*! \brief Clear the background (if necessary) prior to rendering the window
    */
@@ -145,6 +154,7 @@ public:
   virtual bool IsSoundEnabled() const { return true; };
   virtual CFileItemPtr GetCurrentListItem(int offset = 0) { return CFileItemPtr(); };
   virtual int GetViewContainerID() const { return 0; };
+  virtual bool CanBeActivated() const { return true; };
   virtual bool IsActive() const;
   void SetCoordsRes(const RESOLUTION_INFO &res) { m_coordsRes = res; };
   const RESOLUTION_INFO &GetCoordsRes() const { return m_coordsRes; };
@@ -155,10 +165,6 @@ public:
   virtual bool IsVisible() const { return true; }; // windows are always considered visible as they implement their own
                                                    // versions of UpdateVisibility, and are deemed visible if they're in
                                                    // the window manager's active list.
-
-  enum OVERLAY_STATE { OVERLAY_STATE_PARENT_WINDOW=0, OVERLAY_STATE_SHOWN, OVERLAY_STATE_HIDDEN };
-
-  OVERLAY_STATE GetOverlayState() const { return m_overlayState; };
 
   virtual bool IsAnimating(ANIMATION_TYPE animType);
   void DisableAnimations();
@@ -175,13 +181,13 @@ public:
    \param value value to set, may be a string, integer, boolean or double.
    \sa GetProperty
    */
-  void SetProperty(const CStdString &key, const CVariant &value);
+  void SetProperty(const std::string &key, const CVariant &value);
 
   /*! \brief Retreive a property
    \param key name of the property to retrieve
    \return value of the property, empty if it doesn't exist
    */
-  CVariant GetProperty(const CStdString &key) const;
+  CVariant GetProperty(const std::string &key) const;
 
   /*! \brief Clear a all the window's properties
    \sa SetProperty, HasProperty, GetProperty
@@ -195,7 +201,7 @@ public:
   virtual void OnDeinitWindow(int nextWindowID);
 protected:
   virtual EVENT_RESULT OnMouseEvent(const CPoint &point, const CMouseEvent &event);
-  virtual bool LoadXML(const CStdString& strPath, const CStdString &strLowerPath);  ///< Loads from the given file
+  virtual bool LoadXML(const std::string& strPath, const std::string &strLowerPath);  ///< Loads from the given file
   bool Load(TiXmlElement *pRootElement);                 ///< Loads from the given XML root element
   /*! \brief Check if XML file needs (re)loading
    XML file has to be (re)loaded when window is not loaded or include conditions values were changed
@@ -219,7 +225,7 @@ protected:
   virtual void RestoreControlStates();
 
   // methods for updating controls and sending messages
-  void OnEditChanged(int id, CStdString &text);
+  void OnEditChanged(int id, std::string &text);
   bool SendMessage(int message, int id, int param1 = 0, int param2 = 0);
 
   typedef GUIEvent<CGUIMessage&> CLICK_EVENT;
@@ -232,12 +238,7 @@ protected:
 
   void LoadControl(TiXmlElement* pControl, CGUIControlGroup *pGroup, const CRect &rect);
 
-//#ifdef PRE_SKIN_VERSION_9_10_COMPATIBILITY
-  void ChangeButtonToEdit(int id, bool singleLabel = false);
-//#endif
-
   std::vector<int> m_idRange;
-  OVERLAY_STATE m_overlayState;
   RESOLUTION_INFO m_coordsRes; // resolution that the window coordinates are in.
   bool m_needsScaling;
   bool m_windowLoaded;  // true if the window's xml file has been loaded
@@ -266,7 +267,7 @@ protected:
   bool m_animationsEnabled;
   struct icompare
   {
-    bool operator()(const CStdString &s1, const CStdString &s2) const;
+    bool operator()(const std::string &s1, const std::string &s2) const;
   };
 
   CGUIAction m_loadActions;
@@ -278,8 +279,11 @@ protected:
 
   int m_exclusiveMouseControl; ///< \brief id of child control that wishes to receive all mouse events \sa GUI_MSG_EXCLUSIVE_MOUSE
 
+  int m_menuControlID;
+  int m_menuLastFocusedControlID;
+
 private:
-  std::map<CStdString, CVariant, icompare> m_mapProperties;
+  std::map<std::string, CVariant, icompare> m_mapProperties;
   std::map<INFO::InfoPtr, bool> m_xmlIncludeConditions; ///< \brief used to store conditions used to resolve includes for this window
 };
 

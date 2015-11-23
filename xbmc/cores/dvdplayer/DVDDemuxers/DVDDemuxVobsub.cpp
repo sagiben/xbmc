@@ -24,13 +24,10 @@
 #include "DVDStreamInfo.h"
 #include "DVDCodecs/DVDCodecs.h"
 #include "DVDDemuxers/DVDDemuxFFmpeg.h"
-#include "DVDDemuxers/DVDDemuxUtils.h"
 #include "DVDClock.h"
 #include "DVDSubtitles/DVDSubtitleStream.h"
 
 #include <string.h>
-
-using namespace std;
 
 CDVDDemuxVobsub::CDVDDemuxVobsub()
 {
@@ -45,15 +42,16 @@ CDVDDemuxVobsub::~CDVDDemuxVobsub()
   m_Streams.clear();
 }
 
-bool CDVDDemuxVobsub::Open(const string& filename, const string& subfilename)
+bool CDVDDemuxVobsub::Open(const std::string& filename, int source, const std::string& subfilename)
 {
   m_Filename = filename;
+  m_source = source;
 
-  auto_ptr<CDVDSubtitleStream> pStream(new CDVDSubtitleStream());
+  std::unique_ptr<CDVDSubtitleStream> pStream(new CDVDSubtitleStream());
   if(!pStream->Open(filename))
     return false;
 
-  string vobsub = subfilename;
+  std::string vobsub = subfilename;
   if ( vobsub == "")
   {
     vobsub = filename;
@@ -62,7 +60,7 @@ bool CDVDDemuxVobsub::Open(const string& filename, const string& subfilename)
   }
 
   m_Input.reset(CDVDFactoryInputStream::CreateInputStream(NULL, vobsub, ""));
-  if(!m_Input.get() || !m_Input->Open(vobsub.c_str(), "video/x-vobsub"))
+  if(!m_Input.get() || !m_Input->Open(vobsub.c_str(), "video/x-vobsub", false))
     return false;
 
   m_Demuxer.reset(new CDVDDemuxFFmpeg());
@@ -147,7 +145,7 @@ bool CDVDDemuxVobsub::SeekTime(int time, bool backwords, double* startpts)
 
 DemuxPacket* CDVDDemuxVobsub::Read()
 {
-  vector<STimestamp>::iterator current;
+  std::vector<STimestamp>::iterator current;
   do {
     if(m_Timestamp == m_Timestamps.end())
       return NULL;
@@ -195,7 +193,7 @@ bool CDVDDemuxVobsub::ParseDelay(SState& state, char* line)
 
 bool CDVDDemuxVobsub::ParseId(SState& state, char* line)
 {
-  auto_ptr<CStream> stream(new CStream(this));
+  std::unique_ptr<CStream> stream(new CStream(this));
 
   while(*line == ' ') line++;
   strncpy(stream->language, line, 2);
@@ -214,6 +212,7 @@ bool CDVDDemuxVobsub::ParseId(SState& state, char* line)
 
   stream->codec = AV_CODEC_ID_DVD_SUBTITLE;
   stream->iId = m_Streams.size();
+  stream->source = m_source;
 
   state.id = stream->iId;
   m_Streams.push_back(stream.release());
@@ -236,7 +235,7 @@ bool CDVDDemuxVobsub::ParseTimestamp(SState& state, char* line)
   STimestamp timestamp;
 
   while(*line == ' ') line++;
-  if(sscanf(line, "%d:%d:%d:%d, filepos:%"PRIx64, &h, &m, &s, &ms, &timestamp.pos) != 5)
+  if(sscanf(line, "%d:%d:%d:%d, filepos:%" PRIx64, &h, &m, &s, &ms, &timestamp.pos) != 5)
     return false;
 
   timestamp.id  = state.id;

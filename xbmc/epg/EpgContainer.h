@@ -1,5 +1,4 @@
 #pragma once
-
 /*
  *      Copyright (C) 2012-2013 Team XBMC
  *      http://xbmc.org
@@ -20,6 +19,8 @@
  *
  */
 
+#include <map>
+
 #include "XBDateTime.h"
 #include "settings/lib/ISettingCallback.h"
 #include "threads/CriticalSection.h"
@@ -29,14 +30,18 @@
 #include "Epg.h"
 #include "EpgDatabase.h"
 
-#include <map>
-
 class CFileItemList;
 class CGUIDialogProgressBarHandle;
 
 namespace EPG
 {
-  #define g_EpgContainer CEpgContainer::Get()
+  #define g_EpgContainer CEpgContainer::GetInstance()
+
+  struct SUpdateRequest
+  {
+    int clientID;
+    unsigned int channelID;
+  };
 
   class CEpgContainer : public Observer,
                         public Observable,
@@ -59,7 +64,7 @@ namespace EPG
     /*!
      * @return An instance of this singleton.
      */
-    static CEpgContainer &Get(void);
+    static CEpgContainer &GetInstance();
 
     /*!
      * @brief Get a pointer to the database instance.
@@ -69,8 +74,9 @@ namespace EPG
 
     /*!
      * @brief Start the EPG update thread.
+     * @param bAsync Should the EPG container starts asynchronously
      */
-    virtual void Start(void);
+    virtual void Start(bool bAsync);
 
     /*!
      * @brief Stop the EPG update thread.
@@ -113,11 +119,11 @@ namespace EPG
      * @param obs The observable that sent the update.
      * @param msg The update message.
      */
-    virtual void Notify(const Observable &obs, const ObservableMessage msg);
+    virtual void Notify(const Observable &obs, const ObservableMessage msg) override;
 
-    virtual void OnSettingChanged(const CSetting *setting);
+    virtual void OnSettingChanged(const CSetting *setting) override;
 
-    CEpg *CreateChannelEpg(PVR::CPVRChannelPtr channel);
+    CEpgPtr CreateChannelEpg(PVR::CPVRChannelPtr channel);
 
     /*!
      * @brief Get all EPG tables and apply a filter.
@@ -151,14 +157,21 @@ namespace EPG
      * @param iEpgId The database ID of the table.
      * @return The table or NULL if it wasn't found.
      */
-    virtual CEpg *GetById(int iEpgId) const;
+    virtual CEpgPtr GetById(int iEpgId) const;
+
+    /*!
+     * @brief Get the EPG event with the given event id
+     * @param iBroadcastId The event id to get
+     * @return The requested event, or an empty tag when not found
+     */
+    virtual CEpgInfoTagPtr GetTagById(unsigned int iBroadcastId) const;
 
     /*!
      * @brief Get an EPG table given a PVR channel.
      * @param channel The channel to get the EPG table for.
      * @return The table or NULL if it wasn't found.
      */
-    virtual CEpg *GetByChannel(const PVR::CPVRChannel &channel) const;
+    virtual CEpgPtr GetByChannel(const PVR::CPVRChannel &channel) const;
 
     /*!
      * @brief Notify EPG table observers when the currently active tag changed.
@@ -189,7 +202,7 @@ namespace EPG
      * @param iMax The maximum position.
      * @param strText The text to display.
      */
-    virtual void UpdateProgressDialog(int iCurrent, int iMax, const CStdString &strText);
+    virtual void UpdateProgressDialog(int iCurrent, int iMax, const std::string &strText);
 
     /*!
      * @return True to not to store EPG entries in the database.
@@ -220,12 +233,27 @@ namespace EPG
     bool IsInitialising(void) const;
 
     /*!
+     * @brief Set m_bMarkForPersist to force PersistTables() on next Process() run
+     * @return True when m_bMarkForPersist was set.
+     */
+    bool MarkTablesForPersist(void);
+
+    /*!
      * @brief Call Persist() on each table
      * @return True when they all were persisted, false otherwise.
      */
     bool PersistAll(void);
 
+    /*!
+     * @brief Call Persist() on each table
+     * @return True when they all were persisted, false otherwise.
+     */
     bool PersistTables(void);
+
+    /*!
+     * @brief client can trigger an update request for a channel
+     */
+    void UpdateRequest(int clientID, unsigned int channelID);
 
   protected:
     /*!
@@ -255,14 +283,21 @@ namespace EPG
     /*!
      * @brief EPG update thread
      */
-    virtual void Process(void);
+    virtual void Process(void) override;
 
     /*!
      * @brief Load all tables from the database
      */
     void LoadFromDB(void);
 
-    void InsertFromDatabase(int iEpgID, const CStdString &strName, const CStdString &strScraperName);
+    void InsertFromDatabase(int iEpgID, const std::string &strName, const std::string &strScraperName);
+
+    /*!
+     * @brief Update map of epg events
+     */
+    void UpdateEpgEvents();
+
+    void CleanupEpgEvents(const CEpgPtr& epg);
 
     CEpgDatabase m_database;           /*!< the EPG database */
 
@@ -280,16 +315,24 @@ namespace EPG
     bool         m_bStarted;               /*!< true if EpgContainer has fully started */
     bool         m_bLoaded;                /*!< true after epg data is initially loaded from the database */
     bool         m_bPreventUpdates;        /*!< true to prevent EPG updates */
-    bool         m_bHasPendingUpdates;     /*!< true if there are manual updates pending */
+    bool         m_bMarkForPersist;        /*!< true to update channel Epgs called from PVR  */
+    int          m_pendingUpdates;         /*!< count of pending manual updates */
     time_t       m_iLastEpgCleanup;        /*!< the time the EPG was cleaned up */
     time_t       m_iNextEpgUpdate;         /*!< the time the EPG will be updated */
     time_t       m_iNextEpgActiveTagCheck; /*!< the time the EPG will be checked for active tag updates */
     unsigned int m_iNextEpgId;             /*!< the next epg ID that will be given to a new table when the db isn't being used */
-    std::map<unsigned int, CEpg*> m_epgs;  /*!< the EPGs in this container */
+    EPGMAP       m_epgs;                   /*!< the EPGs in this container */
     //@}
 
     CGUIDialogProgressBarHandle *  m_progressHandle; /*!< the progress dialog that is visible when updating the first time */
     CCriticalSection               m_critSection;    /*!< a critical section for changes to this container */
     CEvent                         m_updateEvent;    /*!< trigger when an update finishes */
+
+    std::list<SUpdateRequest> m_updateRequests; /*!< list of update requests triggered by addon*/
+    CCriticalSection m_updateRequestsLock;      /*!< protect update requests*/
+
+    std::map<unsigned int, CEpgInfoTagPtr> m_epgEvents; /*!< map of EPG events by unique broadcast Id*/
+    std::map<unsigned int, CDateTime> m_epgScans;       /*!< map of last scan time by EPG Id*/
+    CDateTime m_lastEpgEventPurge;                      /*!< when the last purge has been processed*/
   };
 }

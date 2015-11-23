@@ -27,19 +27,15 @@
 
 #include "DVDDemuxFFmpeg.h"
 #include "DVDDemuxShoutcast.h"
-#ifdef HAS_FILESYSTEM_HTSP
-#include "DVDDemuxHTSP.h"
-#endif
 #include "DVDDemuxBXA.h"
 #include "DVDDemuxCDDA.h"
 #include "DVDDemuxPVRClient.h"
 #include "pvr/PVRManager.h"
 #include "pvr/addons/PVRClients.h"
 
-using namespace std;
 using namespace PVR;
 
-CDVDDemux* CDVDFactoryDemuxer::CreateDemuxer(CDVDInputStream* pInputStream)
+CDVDDemux* CDVDFactoryDemuxer::CreateDemuxer(CDVDInputStream* pInputStream, bool fileinfo)
 {
   if (!pInputStream)
     return NULL;
@@ -49,7 +45,7 @@ CDVDDemux* CDVDFactoryDemuxer::CreateDemuxer(CDVDInputStream* pInputStream)
   {
     // audio/x-xbmc-pcm this is the used codec for AirTunes
     // (apples audio only streaming)
-    auto_ptr<CDVDDemuxBXA> demuxer(new CDVDDemuxBXA());
+    std::unique_ptr<CDVDDemuxBXA> demuxer(new CDVDDemuxBXA());
     if(demuxer->Open(pInputStream))
       return demuxer.release();
     else
@@ -64,7 +60,7 @@ CDVDDemux* CDVDFactoryDemuxer::CreateDemuxer(CDVDInputStream* pInputStream)
     {
       CLog::Log(LOGDEBUG, "DVDFactoryDemuxer: Stream is probably CD audio. Creating CDDA demuxer.");
 
-      auto_ptr<CDVDDemuxCDDA> demuxer(new CDVDDemuxCDDA());
+      std::unique_ptr<CDVDDemuxCDDA> demuxer(new CDVDDemuxCDDA());
       if (demuxer->Open(pInputStream))
       {
         return demuxer.release();
@@ -80,7 +76,7 @@ CDVDDemux* CDVDFactoryDemuxer::CreateDemuxer(CDVDInputStream* pInputStream)
     /* check so we got the meta information as requested in our http header */
     if( header->GetValue("icy-metaint").length() > 0 )
     {
-      auto_ptr<CDVDDemuxShoutcast> demuxer(new CDVDDemuxShoutcast());
+      std::unique_ptr<CDVDDemuxShoutcast> demuxer(new CDVDDemuxShoutcast());
       if(demuxer->Open(pInputStream))
         return demuxer.release();
       else
@@ -88,43 +84,37 @@ CDVDDemux* CDVDFactoryDemuxer::CreateDemuxer(CDVDInputStream* pInputStream)
     }
   }
 
-#ifdef HAS_FILESYSTEM_HTSP
-  if (pInputStream->IsStreamType(DVDSTREAM_TYPE_HTSP))
-  {
-    auto_ptr<CDVDDemuxHTSP> demuxer(new CDVDDemuxHTSP());
-    if(demuxer->Open(pInputStream))
-      return demuxer.release();
-    else
-      return NULL;
-  }
-#endif
-
+  bool streaminfo = true; /* Look for streams before playback */
   if (pInputStream->IsStreamType(DVDSTREAM_TYPE_PVRMANAGER))
   {
     CDVDInputStreamPVRManager* pInputStreamPVR = (CDVDInputStreamPVRManager*)pInputStream;
     CDVDInputStream* pOtherStream = pInputStreamPVR->GetOtherStream();
+
+    /* Don't parse the streaminfo for some cases of streams to reduce the channel switch time */
+    bool useFastswitch = URIUtils::IsUsingFastSwitch(pInputStream->GetFileName());
+    streaminfo = !useFastswitch;
+
     if(pOtherStream)
     {
       /* Used for MediaPortal PVR addon (uses PVR otherstream for playback of rtsp streams) */
       if (pOtherStream->IsStreamType(DVDSTREAM_TYPE_FFMPEG))
       {
-        auto_ptr<CDVDDemuxFFmpeg> demuxer(new CDVDDemuxFFmpeg());
-        if(demuxer->Open(pOtherStream))
+        std::unique_ptr<CDVDDemuxFFmpeg> demuxer(new CDVDDemuxFFmpeg());
+        if(demuxer->Open(pOtherStream, streaminfo))
           return demuxer.release();
         else
           return NULL;
       }
     }
 
-    std::string filename = pInputStream->GetFileName();
     /* Use PVR demuxer only for live streams */
-    if (filename.substr(0, 14) == "pvr://channels")
+    if (URIUtils::IsPVRChannel(pInputStream->GetFileName()))
     {
-      boost::shared_ptr<CPVRClient> client;
+      std::shared_ptr<CPVRClient> client;
       if (g_PVRClients->GetPlayingClient(client) &&
           client->HandlesDemuxing())
       {
-        auto_ptr<CDVDDemuxPVRClient> demuxer(new CDVDDemuxPVRClient());
+        std::unique_ptr<CDVDDemuxPVRClient> demuxer(new CDVDDemuxPVRClient());
         if(demuxer->Open(pInputStream))
           return demuxer.release();
         else
@@ -133,8 +123,14 @@ CDVDDemux* CDVDFactoryDemuxer::CreateDemuxer(CDVDInputStream* pInputStream)
     }
   }
 
-  auto_ptr<CDVDDemuxFFmpeg> demuxer(new CDVDDemuxFFmpeg());
-  if(demuxer->Open(pInputStream))
+  if (pInputStream->IsStreamType(DVDSTREAM_TYPE_FFMPEG))
+  {
+    bool useFastswitch = URIUtils::IsUsingFastSwitch(pInputStream->GetFileName());
+    streaminfo = !useFastswitch;
+  }
+
+  std::unique_ptr<CDVDDemuxFFmpeg> demuxer(new CDVDDemuxFFmpeg());
+  if(demuxer->Open(pInputStream, streaminfo, fileinfo))
     return demuxer.release();
   else
     return NULL;

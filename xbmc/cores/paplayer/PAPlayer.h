@@ -58,18 +58,21 @@ public:
   virtual float GetPercentage();
   virtual void SetVolume(float volume);
   virtual void SetDynamicRangeCompression(long drc);
-  virtual void GetAudioInfo( CStdString& strAudioInfo) {}
-  virtual void GetVideoInfo( CStdString& strVideoInfo) {}
-  virtual void GetGeneralInfo( CStdString& strVideoInfo) {}
+  virtual void GetAudioInfo( std::string& strAudioInfo) {}
+  virtual void GetVideoInfo( std::string& strVideoInfo) {}
+  virtual void GetGeneralInfo( std::string& strVideoInfo) {}
   virtual void ToFFRW(int iSpeed = 0);
   virtual int GetCacheLevel() const;
   virtual int64_t GetTotalTime();
+  virtual void SetTotalTime(int64_t time);
   virtual void GetAudioStreamInfo(int index, SPlayerAudioStreamInfo &info);
   virtual int64_t GetTime();
+  virtual void SetTime(int64_t time);
   virtual void SeekTime(int64_t iTime = 0);
   virtual bool SkipNext();
+  virtual void GetAudioCapabilities(std::vector<int> &audioCaps) {}
 
-  static bool HandlesType(const CStdString &type);
+  static bool HandlesType(const std::string &type);
 
   virtual void OnJobComplete(unsigned int jobID, bool success, CJob *job);
 
@@ -142,6 +145,8 @@ private:
   int                 m_jobCounter;
   CEvent              m_jobEvent;
   bool                m_continueStream;
+  int64_t             m_newForcedPlayerTime;
+  int64_t             m_newForcedTotalTime;
 
   bool QueueNextFileEx(const CFileItem &file, bool fadeIn = true, bool job = false);
   void SoftStart(bool wait = false);
@@ -156,5 +161,7 @@ private:
   void UpdateStreamInfoPlayNextAtFrame(StreamInfo *si, unsigned int crossFadingTime);
   void UpdateGUIData(StreamInfo *si);
   int64_t GetTimeInternal();
+  void SetTimeInternal(int64_t time);
+  void SetTotalTimeInternal(int64_t time);
 };
 

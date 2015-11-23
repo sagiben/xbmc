@@ -25,11 +25,11 @@
 #include "JSONRPCUtils.h"
 #include "XBDateTime.h"
 #include "utils/SortUtils.h"
-#include "interfaces/IAnnouncer.h"
 #include "playlists/SmartPlayList.h"
 #include "utils/JSONVariantWriter.h"
 #include "utils/JSONVariantParser.h"
 #include "utils/StringUtils.h"
+#include "utils/Variant.h"
 
 namespace JSONRPC
 {
@@ -90,100 +90,25 @@ namespace JSONRPC
 
     static bool ParseSorting(const CVariant &parameterObject, SortBy &sortBy, SortOrder &sortOrder, SortAttribute &sortAttributes)
     {
-      CStdString method = parameterObject["sort"]["method"].asString();
-      CStdString order = parameterObject["sort"]["order"].asString();
+      std::string method = parameterObject["sort"]["method"].asString();
+      std::string order = parameterObject["sort"]["order"].asString();
       StringUtils::ToLower(method);
       StringUtils::ToLower(order);
 
+      // parse the sort attributes
       sortAttributes = SortAttributeNone;
       if (parameterObject["sort"]["ignorearticle"].asBoolean())
         sortAttributes = SortAttributeIgnoreArticle;
       else
         sortAttributes = SortAttributeNone;
 
-      if (order.Equals("ascending"))
-        sortOrder = SortOrderAscending;
-      else if (order.Equals("descending"))
-        sortOrder = SortOrderDescending;
-      else
+      // parse the sort order
+      sortOrder = SortUtils::SortOrderFromString(order);
+      if (sortOrder == SortOrderNone)
         return false;
 
-      if (method.Equals("none"))
-        sortBy = SortByNone;
-      else if (method.Equals("label"))
-        sortBy = SortByLabel;
-      else if (method.Equals("date"))
-        sortBy = SortByDate;
-      else if (method.Equals("size"))
-        sortBy = SortBySize;
-      else if (method.Equals("file"))
-        sortBy = SortByFile;
-      else if (method.Equals("path"))
-        sortBy = SortByPath;
-      else if (method.Equals("drivetype"))
-        sortBy = SortByDriveType;
-      else if (method.Equals("title"))
-        sortBy = SortByTitle;
-      else if (method.Equals("track"))
-        sortBy = SortByTrackNumber;
-      else if (method.Equals("time"))
-        sortBy = SortByTime;
-      else if (method.Equals("artist"))
-        sortBy = SortByArtist;
-      else if (method.Equals("album"))
-        sortBy = SortByAlbum;
-      else if (method.Equals("albumtype"))
-        sortBy = SortByAlbumType;
-      else if (method.Equals("genre"))
-        sortBy = SortByGenre;
-      else if (method.Equals("country"))
-        sortBy = SortByCountry;
-      else if (method.Equals("year"))
-        sortBy = SortByYear;
-      else if (method.Equals("rating"))
-        sortBy = SortByRating;
-      else if (method.Equals("votes"))
-        sortBy = SortByVotes;
-      else if (method.Equals("top250"))
-        sortBy = SortByTop250;
-      else if (method.Equals("programcount"))
-        sortBy = SortByProgramCount;
-      else if (method.Equals("playlist"))
-        sortBy = SortByPlaylistOrder;
-      else if (method.Equals("episode"))
-        sortBy = SortByEpisodeNumber;
-      else if (method.Equals("season"))
-        sortBy = SortBySeason;
-      else if (method.Equals("totalepisodes"))
-        sortBy = SortByNumberOfEpisodes;
-      else if (method.Equals("watchedepisodes"))
-        sortBy = SortByNumberOfWatchedEpisodes;
-      else if (method.Equals("tvshowstatus"))
-        sortBy = SortByTvShowStatus;
-      else if (method.Equals("tvshowtitle"))
-        sortBy = SortByTvShowTitle;
-      else if (method.Equals("sorttitle"))
-        sortBy = SortBySortTitle;
-      else if (method.Equals("productioncode"))
-        sortBy = SortByProductionCode;
-      else if (method.Equals("mpaa"))
-        sortBy = SortByMPAA;
-      else if (method.Equals("studio"))
-        sortBy = SortByStudio;
-      else if (method.Equals("dateadded"))
-        sortBy = SortByDateAdded;
-      else if (method.Equals("lastplayed"))
-        sortBy = SortByLastPlayed;
-      else if (method.Equals("playcount"))
-        sortBy = SortByPlaycount;
-      else if (method.Equals("listeners"))
-        sortBy = SortByListeners;
-      else if (method.Equals("bitrate"))
-        sortBy = SortByBitrate;
-      else if (method.Equals("random"))
-        sortBy = SortByRandom;
-      else
-        return false;
+      // parse the sort method
+      sortBy = SortUtils::SortMethodFromString(method);
 
       return true;
     }
@@ -516,7 +441,7 @@ namespace JSONRPC
         return;
 
       stringArray.clear();
-      for (CVariant::const_iterator_array it = jsonStringArray.begin_array(); it != jsonStringArray.end_array(); it++)
+      for (CVariant::const_iterator_array it = jsonStringArray.begin_array(); it != jsonStringArray.end_array(); ++it)
         stringArray.push_back(it->asString());
     }
 
@@ -542,7 +467,7 @@ namespace JSONRPC
         date.SetFromDBDateTime(jsonDate.asString());
     }
 
-    static bool GetXspFiltering(const CStdString &type, const CVariant &filter, CStdString &xsp)
+    static bool GetXspFiltering(const std::string &type, const CVariant &filter, std::string &xsp)
     {
       if (type.empty() || !filter.isObject())
         return false;

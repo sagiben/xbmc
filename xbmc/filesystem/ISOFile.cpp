@@ -24,9 +24,9 @@
 #include "URL.h"
 #include "iso9660.h"
 
+#include <algorithm>
 #include <sys/stat.h>
 
-using namespace std;
 using namespace XFILE;
 
 //////////////////////////////////////////////////////////////////////
@@ -34,8 +34,9 @@ using namespace XFILE;
 //////////////////////////////////////////////////////////////////////
 //*********************************************************************************************
 CISOFile::CISOFile()
+  : m_bOpened(false)
+  , m_hFile(INVALID_HANDLE_VALUE)
 {
-  m_bOpened = false;
 }
 
 //*********************************************************************************************
@@ -49,7 +50,7 @@ CISOFile::~CISOFile()
 //*********************************************************************************************
 bool CISOFile::Open(const CURL& url)
 {
-  string strFName = "\\";
+  std::string strFName = "\\";
   strFName += url.GetFileName();
   for (int i = 0; i < (int)strFName.size(); ++i )
   {
@@ -67,9 +68,13 @@ bool CISOFile::Open(const CURL& url)
 }
 
 //*********************************************************************************************
-unsigned int CISOFile::Read(void *lpBuf, int64_t uiBufSize)
+ssize_t CISOFile::Read(void *lpBuf, size_t uiBufSize)
 {
-  if (!m_bOpened) return 0;
+  if (!m_bOpened)
+    return -1;
+  if (uiBufSize > SSIZE_MAX)
+    uiBufSize = SSIZE_MAX;
+
   char *pData = (char *)lpBuf;
 
   if (m_cache.getSize() > 0)
@@ -79,8 +84,7 @@ unsigned int CISOFile::Read(void *lpBuf, int64_t uiBufSize)
     {
       if (m_cache.getMaxReadSize() )
       {
-        long lBytes2Read = m_cache.getMaxReadSize();
-        if (lBytes2Read > uiBufSize) lBytes2Read = (long)uiBufSize;
+        unsigned int lBytes2Read = std::min(m_cache.getMaxReadSize(), static_cast<unsigned int>(uiBufSize));
         m_cache.ReadData(pData, lBytes2Read );
         uiBufSize -= lBytes2Read ;
         pData += lBytes2Read;
@@ -99,10 +103,8 @@ unsigned int CISOFile::Read(void *lpBuf, int64_t uiBufSize)
     }
     return lTotalBytesRead;
   }
-  int iResult = m_isoReader.ReadFile( m_hFile, (uint8_t*)pData, (long)uiBufSize);
-  if (iResult == -1)
-    return 0;
-  return iResult;
+
+  return m_isoReader.ReadFile( m_hFile, (uint8_t*)pData, (long)uiBufSize);
 }
 
 //*********************************************************************************************
@@ -138,7 +140,7 @@ int64_t CISOFile::GetPosition()
 
 bool CISOFile::Exists(const CURL& url)
 {
-  string strFName = "\\";
+  std::string strFName = "\\";
   strFName += url.GetFileName();
   for (int i = 0; i < (int)strFName.size(); ++i )
   {
@@ -154,7 +156,7 @@ bool CISOFile::Exists(const CURL& url)
 
 int CISOFile::Stat(const CURL& url, struct __stat64* buffer)
 {
-  string strFName = "\\";
+  std::string strFName = "\\";
   strFName += url.GetFileName();
   for (int i = 0; i < (int)strFName.size(); ++i )
   {

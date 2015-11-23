@@ -6,14 +6,12 @@ SRCS=	DVDFactoryInputStream.cpp \
 	DVDInputStreamBluray.cpp \
 	DVDInputStreamFFmpeg.cpp \
 	DVDInputStreamFile.cpp \
-	DVDInputStreamHTSP.cpp \
 	DVDInputStreamHttp.cpp \
 	DVDInputStreamMemory.cpp \
 	DVDInputStreamNavigator.cpp \
 	DVDInputStreamRTMP.cpp \
 	DVDInputStreamPVRManager.cpp \
 	DVDInputStreamStack.cpp \
-	DVDInputStreamTV.cpp \
 	DVDStateSerializer.cpp \
 
 LIB=	DVDInputStreams.a

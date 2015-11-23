@@ -25,8 +25,9 @@
 #endif
 #include "Application.h"
 #include "FileItem.h"
-#include "guilib/Key.h"
+#include "input/Key.h"
 #include "guilib/LocalizeStrings.h"
+#include "utils/Variant.h"
 
 #define CONTROL_ACCESS_POINTS 3
 
@@ -52,7 +53,7 @@ bool CGUIDialogAccessPoints::OnAction(const CAction &action)
     if (iItem == (int) m_aps.size())
     {
        m_selectedAPEssId = "";
-       if (CGUIKeyboardFactory::ShowAndGetInput(m_selectedAPEssId, g_localizeStrings.Get(789), false))
+       if (CGUIKeyboardFactory::ShowAndGetInput(m_selectedAPEssId, CVariant{g_localizeStrings.Get(789)}, false))
        {
          m_selectedAPEncMode = m_aps[iItem].getEncryptionMode();
          m_wasItemSelected = true;
@@ -84,7 +85,7 @@ void CGUIDialogAccessPoints::OnInitWindow()
 
   m_accessPoints->Clear();
 
-  CStdString ifaceName(m_interfaceName);
+  std::string ifaceName(m_interfaceName);
   CNetworkInterface* iface = g_application.getNetwork().GetInterfaceByName(ifaceName);
   m_aps = iface->GetAccessPoints();
 
@@ -112,12 +113,12 @@ void CGUIDialogAccessPoints::OnInitWindow()
   OnMessage(msg);
 }
 
-void CGUIDialogAccessPoints::SetInterfaceName(CStdString interfaceName)
+void CGUIDialogAccessPoints::SetInterfaceName(std::string interfaceName)
 {
   m_interfaceName = interfaceName;
 }
 
-CStdString CGUIDialogAccessPoints::GetSelectedAccessPointEssId()
+std::string CGUIDialogAccessPoints::GetSelectedAccessPointEssId()
 {
   return m_selectedAPEssId;
 }

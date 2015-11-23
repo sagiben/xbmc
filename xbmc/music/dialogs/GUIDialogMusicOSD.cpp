@@ -20,8 +20,8 @@
 
 #include "GUIDialogMusicOSD.h"
 #include "guilib/GUIWindowManager.h"
-#include "guilib/Key.h"
-#include "input/MouseStat.h"
+#include "input/Key.h"
+#include "input/InputManager.h"
 #include "GUIUserMessages.h"
 #include "settings/Settings.h"
 #include "addons/GUIWindowAddonBrowser.h"
@@ -48,11 +48,11 @@ bool CGUIDialogMusicOSD::OnMessage(CGUIMessage &message)
       unsigned int iControl = message.GetSenderId();
       if (iControl == CONTROL_VIS_BUTTON)
       {
-        CStdString addonID;
+        std::string addonID;
         if (CGUIWindowAddonBrowser::SelectAddonID(ADDON::ADDON_VIZ, addonID, true) == 1)
         {
-          CSettings::Get().SetString("musicplayer.visualisation", addonID);
-          CSettings::Get().Save();
+          CSettings::GetInstance().SetString(CSettings::SETTING_MUSICPLAYER_VISUALISATION, addonID);
+          CSettings::GetInstance().Save();
           g_windowManager.SendMessage(GUI_MSG_VISUALISATION_RELOAD, 0, 0);
         }
       }
@@ -88,9 +88,13 @@ void CGUIDialogMusicOSD::FrameMove()
   if (m_autoClosing)
   {
     // check for movement of mouse or a submenu open
-    if (g_Mouse.IsActive() || g_windowManager.IsWindowActive(WINDOW_DIALOG_VIS_SETTINGS)
-                           || g_windowManager.IsWindowActive(WINDOW_DIALOG_VIS_PRESET_LIST))
-      SetAutoClose(100); // enough for 10fps
+    if (CInputManager::GetInstance().IsMouseActive() ||
+        g_windowManager.IsWindowActive(WINDOW_DIALOG_VIS_SETTINGS) ||
+        g_windowManager.IsWindowActive(WINDOW_DIALOG_VIS_PRESET_LIST) ||
+        g_windowManager.IsWindowActive(WINDOW_DIALOG_AUDIO_DSP_OSD_SETTINGS) ||
+        g_windowManager.IsWindowActive(WINDOW_DIALOG_PVR_RADIO_RDS_INFO))
+      // extend show time by original value
+      SetAutoClose(m_showDuration);
   }
   CGUIDialog::FrameMove();
 }

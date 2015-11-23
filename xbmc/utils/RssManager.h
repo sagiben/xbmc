@@ -42,12 +42,12 @@ typedef std::map<int, RssSet> RssUrls;
 class CRssManager : public ISettingCallback, public ISettingsHandler
 {
 public:
-  static CRssManager& Get();
+  static CRssManager& GetInstance();
 
-  virtual void OnSettingsLoaded();
-  virtual void OnSettingsUnloaded();
+  virtual void OnSettingsLoaded() override;
+  virtual void OnSettingsUnloaded() override;
 
-  virtual void OnSettingAction(const CSetting *setting);
+  virtual void OnSettingAction(const CSetting *setting) override;
 
   void Start();
   void Stop();
@@ -61,11 +61,11 @@ public:
 
 protected:
   CRssManager();
-  CRssManager(const CRssManager&);
-  CRssManager const& operator=(CRssManager const&);
   ~CRssManager();
 
 private:
+  CRssManager(const CRssManager&);
+  CRssManager& operator=(const CRssManager&);
   struct READERCONTROL
   {
     int controlID;

@@ -19,19 +19,20 @@
  */
 
 #include "SystemOperations.h"
-#include "ApplicationMessenger.h"
-#include "interfaces/Builtins.h"
+#include "messaging/ApplicationMessenger.h"
+#include "interfaces/builtins/Builtins.h"
 #include "utils/Variant.h"
 #include "powermanagement/PowerManager.h"
 
 using namespace JSONRPC;
+using namespace KODI::MESSAGING;
 
-JSONRPC_STATUS CSystemOperations::GetProperties(const CStdString &method, ITransportLayer *transport, IClient *client, const CVariant &parameterObject, CVariant &result)
+JSONRPC_STATUS CSystemOperations::GetProperties(const std::string &method, ITransportLayer *transport, IClient *client, const CVariant &parameterObject, CVariant &result)
 {
   CVariant properties = CVariant(CVariant::VariantTypeObject);
   for (unsigned int index = 0; index < parameterObject["properties"].size(); index++)
   {
-    CStdString propertyName = parameterObject["properties"][index].asString();
+    std::string propertyName = parameterObject["properties"][index].asString();
     CVariant property;
     JSONRPC_STATUS ret;
     if ((ret = GetPropertyValue(client->GetPermissionFlags(), propertyName, property)) != OK)
@@ -45,64 +46,64 @@ JSONRPC_STATUS CSystemOperations::GetProperties(const CStdString &method, ITrans
   return OK;
 }
 
-JSONRPC_STATUS CSystemOperations::EjectOpticalDrive(const CStdString &method, ITransportLayer *transport, IClient *client, const CVariant &parameterObject, CVariant &result)
+JSONRPC_STATUS CSystemOperations::EjectOpticalDrive(const std::string &method, ITransportLayer *transport, IClient *client, const CVariant &parameterObject, CVariant &result)
 {
-  return CBuiltins::Execute("EjectTray") == 0 ? ACK : FailedToExecute;
+  return CBuiltins::GetInstance().Execute("EjectTray") == 0 ? ACK : FailedToExecute;
 }
 
-JSONRPC_STATUS CSystemOperations::Shutdown(const CStdString &method, ITransportLayer *transport, IClient *client, const CVariant &parameterObject, CVariant &result)
+JSONRPC_STATUS CSystemOperations::Shutdown(const std::string &method, ITransportLayer *transport, IClient *client, const CVariant &parameterObject, CVariant &result)
 {
   if (g_powerManager.CanPowerdown())
   {
-    CApplicationMessenger::Get().Powerdown();
+    CApplicationMessenger::GetInstance().PostMsg(TMSG_POWERDOWN);
     return ACK;
   }
   else
     return FailedToExecute;
 }
 
-JSONRPC_STATUS CSystemOperations::Suspend(const CStdString &method, ITransportLayer *transport, IClient *client, const CVariant &parameterObject, CVariant &result)
+JSONRPC_STATUS CSystemOperations::Suspend(const std::string &method, ITransportLayer *transport, IClient *client, const CVariant &parameterObject, CVariant &result)
 {
   if (g_powerManager.CanSuspend())
   {
-    CApplicationMessenger::Get().Suspend();
+    CApplicationMessenger::GetInstance().PostMsg(TMSG_SUSPEND);
     return ACK;
   }
   else
     return FailedToExecute;
 }
 
-JSONRPC_STATUS CSystemOperations::Hibernate(const CStdString &method, ITransportLayer *transport, IClient *client, const CVariant &parameterObject, CVariant &result)
+JSONRPC_STATUS CSystemOperations::Hibernate(const std::string &method, ITransportLayer *transport, IClient *client, const CVariant &parameterObject, CVariant &result)
 {
   if (g_powerManager.CanHibernate())
   {
-    CApplicationMessenger::Get().Hibernate();
+    CApplicationMessenger::GetInstance().PostMsg(TMSG_HIBERNATE);
     return ACK;
   }
   else
     return FailedToExecute;
 }
 
-JSONRPC_STATUS CSystemOperations::Reboot(const CStdString &method, ITransportLayer *transport, IClient *client, const CVariant &parameterObject, CVariant &result)
+JSONRPC_STATUS CSystemOperations::Reboot(const std::string &method, ITransportLayer *transport, IClient *client, const CVariant &parameterObject, CVariant &result)
 {
   if (g_powerManager.CanReboot())
   {
-    CApplicationMessenger::Get().Restart();
+    CApplicationMessenger::GetInstance().PostMsg(TMSG_RESTART);
     return ACK;
   }
   else
     return FailedToExecute;
 }
 
-JSONRPC_STATUS CSystemOperations::GetPropertyValue(int permissions, const CStdString &property, CVariant &result)
+JSONRPC_STATUS CSystemOperations::GetPropertyValue(int permissions, const std::string &property, CVariant &result)
 {
-  if (property.Equals("canshutdown"))
+  if (property == "canshutdown")
     result = g_powerManager.CanPowerdown() && (permissions & ControlPower);
-  else if (property.Equals("cansuspend"))
+  else if (property == "cansuspend")
     result = g_powerManager.CanSuspend() && (permissions & ControlPower);
-  else if (property.Equals("canhibernate"))
+  else if (property == "canhibernate")
     result = g_powerManager.CanHibernate() && (permissions & ControlPower);
-  else if (property.Equals("canreboot"))
+  else if (property == "canreboot")
     result = g_powerManager.CanReboot() && (permissions & ControlPower);
   else
     return InvalidParams;

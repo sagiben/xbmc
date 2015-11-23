@@ -23,16 +23,11 @@
 #include "DVDInputStream.h"
 #include "DVDInputStreamFile.h"
 #include "DVDInputStreamNavigator.h"
-#include "DVDInputStreamHttp.h"
 #include "DVDInputStreamFFmpeg.h"
 #include "DVDInputStreamPVRManager.h"
-#include "DVDInputStreamTV.h"
 #include "DVDInputStreamRTMP.h"
 #ifdef HAVE_LIBBLURAY
 #include "DVDInputStreamBluray.h"
-#endif
-#ifdef HAS_FILESYSTEM_HTSP
-#include "DVDInputStreamHTSP.h"
 #endif
 #ifdef ENABLE_DVDINPUTSTREAM_STACK
 #include "DVDInputStreamStack.h"
@@ -44,11 +39,13 @@
 #include "utils/URIUtils.h"
 
 
-CDVDInputStream* CDVDFactoryInputStream::CreateInputStream(IDVDPlayer* pPlayer, const std::string& file, const std::string& content)
+CDVDInputStream* CDVDFactoryInputStream::CreateInputStream(IDVDPlayer* pPlayer, const std::string& file, const std::string& content, bool contentlookup)
 {
   CFileItem item(file.c_str(), false);
 
-  if(item.IsDVDImage())
+  item.SetMimeType(content);
+
+  if(item.IsDiscImage())
   {
 #ifdef HAVE_LIBBLURAY
     CURL url("udf://");
@@ -88,15 +85,8 @@ CDVDInputStream* CDVDFactoryInputStream::CreateInputStream(IDVDPlayer* pPlayer, 
        || file.substr(0, 6) == "tcp://"
        || file.substr(0, 6) == "mms://"
        || file.substr(0, 7) == "mmst://"
-       || file.substr(0, 7) == "mmsh://"
-       || (item.IsInternetStream() && item.IsType(".m3u8")))
+       || file.substr(0, 7) == "mmsh://")
     return new CDVDInputStreamFFmpeg();
-  else if(file.substr(0, 8) == "sling://"
-       || file.substr(0, 7) == "myth://"
-       || file.substr(0, 8) == "cmyth://"
-       || file.substr(0, 8) == "gmyth://"
-       || file.substr(0, 6) == "vtp://")
-    return new CDVDInputStreamTV();
 #ifdef ENABLE_DVDINPUTSTREAM_STACK
   else if(file.substr(0, 8) == "stack://")
     return new CDVDInputStreamStack();
@@ -109,10 +99,21 @@ CDVDInputStream* CDVDFactoryInputStream::CreateInputStream(IDVDPlayer* pPlayer, 
        || file.substr(0, 8) == "rtmps://")
     return new CDVDInputStreamRTMP();
 #endif
-#ifdef HAS_FILESYSTEM_HTSP
-  else if(file.substr(0, 7) == "htsp://")
-    return new CDVDInputStreamHTSP();
-#endif
+  else if (item.IsInternetStream())
+  {
+    if (item.IsType(".m3u8"))
+      return new CDVDInputStreamFFmpeg();
+
+    if (contentlookup)
+    {
+      // request header
+      item.SetMimeType("");
+      item.FillInMimeType();
+    }
+
+    if (item.GetMimeType() == "application/vnd.apple.mpegurl")
+      return new CDVDInputStreamFFmpeg();
+  }
 
   // our file interface handles all these types of streams
   return (new CDVDInputStreamFile());

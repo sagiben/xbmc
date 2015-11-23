@@ -38,23 +38,24 @@
 #include "XBDateTime.h"
 #include "settings/lib/Setting.h"
 #include "settings/Settings.h"
+#include <stdlib.h>
 
-using namespace std;
+#include <algorithm>
 
 CLinuxTimezone::CLinuxTimezone() : m_IsDST(0)
 {
    char* line = NULL;
    size_t linelen = 0;
    int nameonfourthfield = 0;
-   CStdString s;
+   std::string s;
    std::vector<std::string> tokens;
 
    // Load timezones
    FILE* fp = fopen("/usr/share/zoneinfo/zone.tab", "r");
    if (fp)
    {
-      CStdString countryCode;
-      CStdString timezoneName;
+      std::string countryCode;
+      std::string timezoneName;
 
       while (getdelim(&line, &linelen, '\n', fp) > 0)
       {
@@ -77,13 +78,13 @@ CLinuxTimezone::CLinuxTimezone() : m_IsDST(0)
 
          if (m_timezonesByCountryCode.count(countryCode) == 0)
          {
-            vector<CStdString> timezones;
+            std::vector<std::string> timezones;
             timezones.push_back(timezoneName);
             m_timezonesByCountryCode[countryCode] = timezones;
          }
          else
          {
-            vector<CStdString>& timezones = m_timezonesByCountryCode[countryCode];
+            std::vector<std::string>& timezones = m_timezonesByCountryCode[countryCode];
             timezones.push_back(timezoneName);
          }
 
@@ -108,8 +109,8 @@ CLinuxTimezone::CLinuxTimezone() : m_IsDST(0)
    }
    if (fp)
    {
-      CStdString countryCode;
-      CStdString countryName;
+      std::string countryCode;
+      std::string countryName;
 
       while (getdelim(&line, &linelen, '\n', fp) > 0)
       {
@@ -156,13 +157,13 @@ void CLinuxTimezone::OnSettingChanged(const CSetting *setting)
     return;
 
   const std::string &settingId = setting->GetId();
-  if (settingId == "locale.timezone")
+  if (settingId == CSettings::SETTING_LOCALE_TIMEZONE)
   {
     SetTimezone(((CSettingString*)setting)->GetValue());
 
     CDateTime::ResetTimezoneBias();
   }
-  else if (settingId == "locale.timezonecountry")
+  else if (settingId == CSettings::SETTING_LOCALE_TIMEZONECOUNTRY)
   {
     // nothing to do here. Changing locale.timezonecountry will trigger an
     // update of locale.timezone and automatically adjust its value
@@ -172,38 +173,35 @@ void CLinuxTimezone::OnSettingChanged(const CSetting *setting)
 
 void CLinuxTimezone::OnSettingsLoaded()
 {
-  SetTimezone(CSettings::Get().GetString("locale.timezone"));
+  SetTimezone(CSettings::GetInstance().GetString(CSettings::SETTING_LOCALE_TIMEZONE));
   CDateTime::ResetTimezoneBias();
 }
 
-vector<CStdString> CLinuxTimezone::GetCounties()
+std::vector<std::string> CLinuxTimezone::GetCounties()
 {
    return m_counties;
 }
 
-vector<CStdString> CLinuxTimezone::GetTimezonesByCountry(const CStdString country)
+std::vector<std::string> CLinuxTimezone::GetTimezonesByCountry(const std::string& country)
 {
    return m_timezonesByCountryCode[m_countryByName[country]];
 }
 
-CStdString CLinuxTimezone::GetCountryByTimezone(const CStdString timezone)
+std::string CLinuxTimezone::GetCountryByTimezone(const std::string& timezone)
 {
 #if defined(TARGET_DARWIN)
-   return CStdString("?");
+   return "?";
 #else
    return m_countryByCode[m_countriesByTimezoneName[timezone]];
 #endif
 }
 
-void CLinuxTimezone::SetTimezone(CStdString timezoneName)
+void CLinuxTimezone::SetTimezone(std::string timezoneName)
 {
-  bool use_timezone = false;
-  
 #if !defined(TARGET_DARWIN)
-  use_timezone = true;
+  bool use_timezone = true;
 #else
-  if (g_sysinfo.IsAppleTV2())
-    use_timezone = true;  
+  bool use_timezone = false;
 #endif
   
   if (use_timezone)
@@ -215,7 +213,7 @@ void CLinuxTimezone::SetTimezone(CStdString timezoneName)
   }
 }
 
-CStdString CLinuxTimezone::GetOSConfiguredTimezone()
+std::string CLinuxTimezone::GetOSConfiguredTimezone()
 {
    char timezoneName[255];
 
@@ -252,24 +250,24 @@ CStdString CLinuxTimezone::GetOSConfiguredTimezone()
    return timezoneName;
 }
 
-void CLinuxTimezone::SettingOptionsTimezoneCountriesFiller(const CSetting *setting, std::vector< std::pair<std::string, std::string> > &list, std::string &current)
+void CLinuxTimezone::SettingOptionsTimezoneCountriesFiller(const CSetting *setting, std::vector< std::pair<std::string, std::string> > &list, std::string &current, void *data)
 {
-  vector<CStdString> countries = g_timezone.GetCounties();
+  std::vector<std::string> countries = g_timezone.GetCounties();
   for (unsigned int i = 0; i < countries.size(); i++)
-    list.push_back(make_pair(countries[i], countries[i]));
+    list.push_back(std::make_pair(countries[i], countries[i]));
 }
 
-void CLinuxTimezone::SettingOptionsTimezonesFiller(const CSetting *setting, std::vector< std::pair<std::string, std::string> > &list, std::string &current)
+void CLinuxTimezone::SettingOptionsTimezonesFiller(const CSetting *setting, std::vector< std::pair<std::string, std::string> > &list, std::string &current, void *data)
 {
   current = ((const CSettingString*)setting)->GetValue();
   bool found = false;
-  vector<CStdString> timezones = g_timezone.GetTimezonesByCountry(CSettings::Get().GetString("locale.timezonecountry"));
+  std::vector<std::string> timezones = g_timezone.GetTimezonesByCountry(CSettings::GetInstance().GetString(CSettings::SETTING_LOCALE_TIMEZONECOUNTRY));
   for (unsigned int i = 0; i < timezones.size(); i++)
   {
-    if (!found && timezones[i].Equals(current.c_str()))
+    if (!found && StringUtils::EqualsNoCase(timezones[i], current))
       found = true;
 
-    list.push_back(make_pair(timezones[i], timezones[i]));
+    list.push_back(std::make_pair(timezones[i], timezones[i]));
   }
 
   if (!found && timezones.size() > 0)

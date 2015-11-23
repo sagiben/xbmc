@@ -25,25 +25,20 @@
 #include "GUIPassword.h"
 #include "music/MusicDatabase.h"
 #include "music/tags/MusicInfoTag.h"
-#include "URL.h"
 #include "filesystem/File.h"
 #include "FileItem.h"
 #include "profiles/ProfilesManager.h"
 #include "storage/MediaManager.h"
-#include "utils/AsyncFileCopy.h"
 #include "settings/AdvancedSettings.h"
 #include "settings/MediaSourceSettings.h"
-#include "settings/Settings.h"
-#include "guilib/Key.h"
+#include "input/Key.h"
 #include "guilib/LocalizeStrings.h"
-#include "utils/log.h"
 #include "utils/URIUtils.h"
 #include "utils/StringUtils.h"
 #include "TextureCache.h"
 #include "music/MusicThumbLoader.h"
 #include "filesystem/Directory.h"
 
-using namespace std;
 using namespace XFILE;
 
 #define CONTROL_IMAGE            3
@@ -147,31 +142,31 @@ bool CGUIDialogMusicInfo::OnAction(const CAction &action)
   return CGUIDialog::OnAction(action);
 }
 
-void CGUIDialogMusicInfo::SetAlbum(const CAlbum& album, const CStdString &path)
+void CGUIDialogMusicInfo::SetAlbum(const CAlbum& album, const std::string &path)
 {
   m_album = album;
   SetSongs(m_album.infoSongs);
   *m_albumItem = CFileItem(path, true);
   m_albumItem->GetMusicInfoTag()->SetAlbum(m_album.strAlbum);
-  m_albumItem->GetMusicInfoTag()->SetAlbumArtist(StringUtils::Join(m_album.artist, g_advancedSettings.m_musicItemSeparator));
-  m_albumItem->GetMusicInfoTag()->SetArtist(m_album.artist);
+  m_albumItem->GetMusicInfoTag()->SetAlbumArtist(m_album.GetAlbumArtist());
+  m_albumItem->GetMusicInfoTag()->SetArtist(m_album.GetAlbumArtist());
   m_albumItem->GetMusicInfoTag()->SetYear(m_album.iYear);
   m_albumItem->GetMusicInfoTag()->SetLoaded(true);
-  m_albumItem->GetMusicInfoTag()->SetRating('0' + m_album.iRating);
+  m_albumItem->GetMusicInfoTag()->SetUserrating('0' + m_album.iRating);
   m_albumItem->GetMusicInfoTag()->SetGenre(m_album.genre);
-  m_albumItem->GetMusicInfoTag()->SetDatabaseId(m_album.idAlbum, "album");
+  m_albumItem->GetMusicInfoTag()->SetDatabaseId(m_album.idAlbum, MediaTypeAlbum);
   CMusicDatabase::SetPropertiesFromAlbum(*m_albumItem,m_album);
 
   CMusicThumbLoader loader;
   loader.LoadItem(m_albumItem.get());
 
   // set the artist thumb, fanart
-  if (!m_album.artist.empty())
+  if (!m_album.GetAlbumArtist().empty())
   {
     CMusicDatabase db;
     db.Open();
-    map<string, string> artwork;
-    if (db.GetArtistArtForItem(m_album.idAlbum, "album", artwork))
+    std::map<std::string, std::string> artwork;
+    if (db.GetArtistArtForItem(m_album.idAlbum, MediaTypeAlbum, artwork))
     {
       if (artwork.find("thumb") != artwork.end())
         m_albumItem->SetProperty("artistthumb", artwork["thumb"]);
@@ -184,7 +179,7 @@ void CGUIDialogMusicInfo::SetAlbum(const CAlbum& album, const CStdString &path)
   m_albumSongs->SetContent("albums");
 }
 
-void CGUIDialogMusicInfo::SetArtist(const CArtist& artist, const CStdString &path)
+void CGUIDialogMusicInfo::SetArtist(const CArtist& artist, const std::string &path)
 {
   m_artist = artist;
   SetDiscography();
@@ -194,7 +189,7 @@ void CGUIDialogMusicInfo::SetArtist(const CArtist& artist, const CStdString &pat
   m_albumItem->GetMusicInfoTag()->SetArtist(m_artist.strArtist);
   m_albumItem->GetMusicInfoTag()->SetLoaded(true);
   m_albumItem->GetMusicInfoTag()->SetGenre(m_artist.genre);
-  m_albumItem->GetMusicInfoTag()->SetDatabaseId(m_artist.idArtist, "artist");
+  m_albumItem->GetMusicInfoTag()->SetDatabaseId(m_artist.idArtist, MediaTypeArtist);
   CMusicDatabase::SetPropertiesFromArtist(*m_albumItem,m_artist);
 
   CMusicThumbLoader loader;
@@ -222,7 +217,7 @@ void CGUIDialogMusicInfo::SetDiscography()
   CMusicDatabase database;
   database.Open();
 
-  vector<int> albumsByArtist;
+  std::vector<int> albumsByArtist;
   database.GetAlbumsByArtist(m_artist.idArtist, true, albumsByArtist);
 
   for (unsigned int i=0;i<m_artist.discography.size();++i)
@@ -231,9 +226,9 @@ void CGUIDialogMusicInfo::SetDiscography()
     item->SetLabel2(m_artist.discography[i].second);
 
     int idAlbum = -1;
-    for (vector<int>::const_iterator album = albumsByArtist.begin(); album != albumsByArtist.end(); ++album)
+    for (std::vector<int>::const_iterator album = albumsByArtist.begin(); album != albumsByArtist.end(); ++album)
     {
-      if (database.GetAlbumById(*album).Equals(item->GetLabel()))
+      if (StringUtils::EqualsNoCase(database.GetAlbumById(*album), item->GetLabel()))
       {
         idAlbum = *album;
         item->GetMusicInfoTag()->SetDatabaseId(idAlbum, "album");
@@ -242,7 +237,7 @@ void CGUIDialogMusicInfo::SetDiscography()
     }
 
     if (idAlbum != -1) // we need this slight stupidity to get correct case for the album name
-      item->SetArt("thumb", database.GetArtForItem(idAlbum, "album", "thumb"));
+      item->SetArt("thumb", database.GetArtForItem(idAlbum, MediaTypeAlbum, "thumb"));
     else
       item->SetArt("thumb", "DefaultAlbumCover.png");
 
@@ -310,10 +305,10 @@ void CGUIDialogMusicInfo::Update()
   }
 
   // disable the GetThumb button if the user isn't allowed it
-  CONTROL_ENABLE_ON_CONDITION(CONTROL_BTN_GET_THUMB, CProfilesManager::Get().GetCurrentProfile().canWriteDatabases() || g_passwordManager.bMasterUser);
+  CONTROL_ENABLE_ON_CONDITION(CONTROL_BTN_GET_THUMB, CProfilesManager::GetInstance().GetCurrentProfile().canWriteDatabases() || g_passwordManager.bMasterUser);
 }
 
-void CGUIDialogMusicInfo::SetLabel(int iControl, const CStdString& strLabel)
+void CGUIDialogMusicInfo::SetLabel(int iControl, const std::string& strLabel)
 {
   if (strLabel.empty())
   {
@@ -358,7 +353,7 @@ void CGUIDialogMusicInfo::OnGetThumb()
   }
 
   // Grab the thumbnail(s) from the web
-  vector<CStdString> thumbs;
+  std::vector<std::string> thumbs;
   if (m_bArtistInfo)
     m_artist.thumbURL.GetThumbURLs(thumbs);
   else
@@ -366,7 +361,7 @@ void CGUIDialogMusicInfo::OnGetThumb()
 
   for (unsigned int i = 0; i < thumbs.size(); ++i)
   {
-    CStdString strItemPath;
+    std::string strItemPath;
     strItemPath = StringUtils::Format("thumb://Remote%i", i);
     CFileItemPtr item(new CFileItem(strItemPath, false));
     item->SetArt("thumb", thumbs[i]);
@@ -374,17 +369,17 @@ void CGUIDialogMusicInfo::OnGetThumb()
     item->SetLabel(g_localizeStrings.Get(20015));
     
     // TODO: Do we need to clear the cached image?
-    //    CTextureCache::Get().ClearCachedImage(thumb);
+    //    CTextureCache::GetInstance().ClearCachedImage(thumb);
     items.Add(item);
   }
 
   // local thumb
-  CStdString localThumb;
+  std::string localThumb;
   if (m_bArtistInfo)
   {
     CMusicDatabase database;
     database.Open();
-    CStdString strArtistPath;
+    std::string strArtistPath;
     if (database.GetArtistPath(m_artist.idArtist,strArtistPath))
       localThumb = URIUtils::AddFileToFolder(strArtistPath, "folder.jpg");
   }
@@ -408,9 +403,9 @@ void CGUIDialogMusicInfo::OnGetThumb()
     items.Add(item);
   }
 
-  CStdString result;
+  std::string result;
   bool flip=false;
-  VECSOURCES sources(*CMediaSourceSettings::Get().GetSources("music"));
+  VECSOURCES sources(*CMediaSourceSettings::GetInstance().GetSources("music"));
   AddItemPathToFileBrowserSources(sources, *m_albumItem);
   g_mediaManager.GetLocalDrives(sources);
   if (!CGUIDialogFileBrowser::ShowAndGetImage(items, sources, g_localizeStrings.Get(1030), result, &flip))
@@ -419,7 +414,7 @@ void CGUIDialogMusicInfo::OnGetThumb()
   if (result == "thumb://Current")
     return;   // user chose the one they have
 
-  CStdString newThumb;
+  std::string newThumb;
   if (StringUtils::StartsWith(result, "thumb://Remote"))
   {
     int number = atoi(result.substr(14).c_str());
@@ -468,25 +463,25 @@ void CGUIDialogMusicInfo::OnGetFanart()
   // Grab the thumbnails from the web
   for (unsigned int i = 0; i < m_artist.fanart.GetNumFanarts(); i++)
   {
-    CStdString strItemPath = StringUtils::Format("fanart://Remote%i",i);
+    std::string strItemPath = StringUtils::Format("fanart://Remote%i",i);
     CFileItemPtr item(new CFileItem(strItemPath, false));
-    CStdString thumb = m_artist.fanart.GetPreviewURL(i);
+    std::string thumb = m_artist.fanart.GetPreviewURL(i);
     item->SetArt("thumb", CTextureUtils::GetWrappedThumbURL(thumb));
     item->SetIconImage("DefaultPicture.png");
     item->SetLabel(g_localizeStrings.Get(20441));
 
     // TODO: Do we need to clear the cached image?
-    //    CTextureCache::Get().ClearCachedImage(thumb);
+    //    CTextureCache::GetInstance().ClearCachedImage(thumb);
     items.Add(item);
   }
 
   // Grab a local thumb
   CMusicDatabase database;
   database.Open();
-  CStdString strArtistPath;
+  std::string strArtistPath;
   database.GetArtistPath(m_artist.idArtist,strArtistPath);
   CFileItem item(strArtistPath,true);
-  CStdString strLocal = item.GetLocalFanart();
+  std::string strLocal = item.GetLocalFanart();
   if (!strLocal.empty())
   {
     CFileItemPtr itemLocal(new CFileItem("fanart://Local",false));
@@ -494,7 +489,7 @@ void CGUIDialogMusicInfo::OnGetFanart()
     itemLocal->SetLabel(g_localizeStrings.Get(20438));
 
     // TODO: Do we need to clear the cached image?
-    CTextureCache::Get().ClearCachedImage(strLocal);
+    CTextureCache::GetInstance().ClearCachedImage(strLocal);
     items.Add(itemLocal);
   }
   else
@@ -505,8 +500,8 @@ void CGUIDialogMusicInfo::OnGetFanart()
     items.Add(itemNone);
   }
 
-  CStdString result;
-  VECSOURCES sources = *CMediaSourceSettings::Get().GetSources("music");
+  std::string result;
+  VECSOURCES sources = *CMediaSourceSettings::GetInstance().GetSources("music");
   g_mediaManager.GetLocalDrives(sources);
   bool flip=false;
   if (!CGUIDialogFileBrowser::ShowAndGetImage(items, sources, g_localizeStrings.Get(20437), result, &flip, 20445))
@@ -514,10 +509,10 @@ void CGUIDialogMusicInfo::OnGetFanart()
 
   // delete the thumbnail if that's what the user wants, else overwrite with the
   // new thumbnail
-  if (result.Equals("fanart://Current"))
+  if (StringUtils::EqualsNoCase(result, "fanart://Current"))
    return;
 
-  if (result.Equals("fanart://Local"))
+  if (StringUtils::EqualsNoCase(result, "fanart://Local"))
     result = strLocal;
 
   if (StringUtils::StartsWith(result, "fanart://Remote"))
@@ -526,7 +521,7 @@ void CGUIDialogMusicInfo::OnGetFanart()
     m_artist.fanart.SetPrimaryFanart(iFanart);
     result = m_artist.fanart.GetImageURL();
   }
-  else if (result.Equals("fanart://None") || !CFile::Exists(result))
+  else if (StringUtils::EqualsNoCase(result, "fanart://None") || !CFile::Exists(result))
     result.clear();
 
   if (flip && !result.empty())
@@ -560,7 +555,7 @@ void CGUIDialogMusicInfo::OnSearch(const CFileItem* pItem)
     CAlbum album;
     if (database.GetAlbum(pItem->GetMusicInfoTag()->GetDatabaseId(), album))
     {
-      CStdString strPath;
+      std::string strPath;
       database.GetAlbumPath(pItem->GetMusicInfoTag()->GetDatabaseId(), strPath);
       SetAlbum(album,strPath);
       Update();
@@ -575,9 +570,9 @@ CFileItemPtr CGUIDialogMusicInfo::GetCurrentListItem(int offset)
 
 void CGUIDialogMusicInfo::AddItemPathToFileBrowserSources(VECSOURCES &sources, const CFileItem &item)
 {
-  CStdString itemDir;
+  std::string itemDir;
 
-  if (item.HasMusicInfoTag() && item.GetMusicInfoTag()->GetType() == "song")
+  if (item.HasMusicInfoTag() && item.GetMusicInfoTag()->GetType() == MediaTypeSong)
     itemDir = URIUtils::GetParentPath(item.GetMusicInfoTag()->GetURL());
   else
     itemDir = item.GetPath();

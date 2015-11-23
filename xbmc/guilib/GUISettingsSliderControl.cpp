@@ -126,7 +126,7 @@ void CGUISettingsSliderControl::SetEnabled(bool bEnable)
   m_buttonControl.SetEnabled(bEnable);
 }
 
-CStdString CGUISettingsSliderControl::GetDescription() const
+std::string CGUISettingsSliderControl::GetDescription() const
 {
   return m_buttonControl.GetDescription() + " " + CGUISliderControl::GetDescription();
 }
@@ -136,6 +136,7 @@ bool CGUISettingsSliderControl::UpdateColors()
   bool changed = CGUISliderControl::UpdateColors();
   changed |= m_buttonControl.SetColorDiffuse(m_diffuseColor);
   changed |= m_buttonControl.UpdateColors();
+  changed |= m_label.UpdateColors();
 
   return changed;
 }

@@ -25,9 +25,11 @@
  \brief
  */
 
+#include <utility>
+
+#include "GUIAction.h"
 #include "GUIInfoTypes.h"
 #include "xbmc/FileItem.h"
-#include "GUIAction.h"
 
 class TiXmlElement;
 
@@ -87,11 +89,11 @@ public:
 
   const CGUIAction &GetClickActions() const { return m_clickActions; };
 private:
-  typedef std::vector< std::pair<CGUIInfoLabel, CStdString> > InfoVector;
+  typedef std::vector< std::pair<CGUIInfoLabel, std::string> > InfoVector;
   InfoVector m_info;
   INFO::InfoPtr m_visCondition;
   bool m_visState;
   CGUIAction m_clickActions;
 };
 
-typedef boost::shared_ptr<CGUIStaticItem> CGUIStaticItemPtr;
+typedef std::shared_ptr<CGUIStaticItem> CGUIStaticItemPtr;

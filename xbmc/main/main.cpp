@@ -35,12 +35,16 @@
   #ifdef HAS_SDL
     #include <SDL/SDL.h>
   #endif
+#include <locale.h>
 #endif
 #ifdef HAS_LIRC
 #include "input/linux/LIRC.h"
 #endif
 #include "XbmcContext.h"
 
+#ifdef __cplusplus
+extern "C"
+#endif
 int main(int argc, char* argv[])
 {
   // set up some xbmc specific relationships
@@ -69,9 +73,8 @@ int main(int argc, char* argv[])
   setlocale(LC_NUMERIC, "C");
   g_advancedSettings.Initialize();
 
-#ifndef TARGET_WINDOWS
   CAppParamParser appParamParser;
-  appParamParser.Parse((const char **)argv, argc);
-#endif
+  appParamParser.Parse(const_cast<const char**>(argv), argc);
+  
   return XBMC_Run(renderGUI);
 }

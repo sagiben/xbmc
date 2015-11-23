@@ -21,7 +21,7 @@
 
 #include <map>
 #include <string>
-#include "boost/shared_ptr.hpp"
+#include <memory>
 
 #include "DatabaseUtils.h"
 #include "SortFileItem.h"
@@ -57,12 +57,14 @@ typedef enum {
   SortByTrackNumber,
   SortByTime,
   SortByArtist,
+  SortByArtistThenYear,
   SortByAlbum,
   SortByAlbumType,
   SortByGenre,
   SortByCountry,
   SortByYear,
   SortByRating,
+  SortByUserRating,
   SortByVotes,
   SortByTop250,
   SortByProgramCount,
@@ -91,6 +93,7 @@ typedef enum {
   SortByBitrate,
   SortByRandom,
   SortByChannel,
+  SortByChannelNumber,
   SortByDateTaken
 } SortBy;
 
@@ -107,15 +110,15 @@ typedef struct SortDescription {
   { }
 } SortDescription;
 
-typedef struct
+typedef struct GUIViewSortDetails
 {
   SortDescription m_sortDescription;
   int m_buttonLabel;
   LABEL_MASKS m_labelMasks;
-} SORT_METHOD_DETAILS;
+} GUIViewSortDetails;
 
 typedef DatabaseResult SortItem;
-typedef boost::shared_ptr<SortItem> SortItemPtr;
+typedef std::shared_ptr<SortItem> SortItemPtr;
 typedef std::vector<SortItemPtr> SortItems;
 
 class SortUtils
@@ -123,6 +126,11 @@ class SortUtils
 public:
   static SORT_METHOD TranslateOldSortMethod(SortBy sortBy, bool ignoreArticle);
   static SortDescription TranslateOldSortMethod(SORT_METHOD sortBy);
+
+  static SortBy SortMethodFromString(const std::string& sortMethod);
+  static const std::string& SortMethodToString(SortBy sortMethod);
+  static SortOrder SortOrderFromString(const std::string& sortOrder);
+  static const std::string& SortOrderToString(SortOrder sortOrder);
 
   /*! \brief retrieve the label id associated with a sort method for displaying in the UI.
    \param sortBy the sort method in question.
@@ -134,7 +142,7 @@ public:
   static void Sort(SortBy sortBy, SortOrder sortOrder, SortAttribute attributes, SortItems& items, int limitEnd = -1, int limitStart = 0);
   static void Sort(const SortDescription &sortDescription, DatabaseResults& items);
   static void Sort(const SortDescription &sortDescription, SortItems& items);
-  static bool SortFromDataset(const SortDescription &sortDescription, MediaType mediaType, const std::auto_ptr<dbiplus::Dataset> &dataset, DatabaseResults &results);
+  static bool SortFromDataset(const SortDescription &sortDescription, const MediaType &mediaType, const std::unique_ptr<dbiplus::Dataset> &dataset, DatabaseResults &results);
   
   static const Fields& GetFieldsForSorting(SortBy sortBy);
   static std::string RemoveArticles(const std::string &label);

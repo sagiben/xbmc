@@ -30,11 +30,10 @@
 #include "guilib/GraphicContext.h"
 #include "DVDClock.h"
 #include "utils/log.h"
-#include "utils/fastmemcpy.h"
 #include "threads/Thread.h"
 #include "threads/Event.h"
 #include "Application.h"
-#include "ApplicationMessenger.h"
+#include "messaging/ApplicationMessenger.h"
 #include "settings/AdvancedSettings.h"
 #include "android/jni/Build.h"
 
@@ -56,15 +55,11 @@
 #define EGL_IMAGE_PRESERVED_KHR   0x30D2
 
 using namespace android;
+using namespace KODI::MESSAGING;
 
 static int64_t pts_dtoi(double pts)
 {
   return (int64_t)(pts);
-}
-
-static double pts_itod(int64_t pts)
-{
-  return (double)pts;
 }
 
 /***********************************************************/
@@ -420,6 +415,11 @@ bool CStageFrightVideo::Open(CDVDStreamInfo &hints)
   const char* mimetype;
   switch (hints.codec)
   {
+  case AV_CODEC_ID_HEVC:
+    if (p->m_g_advancedSettings->m_stagefrightConfig.useHEVCcodec == 0)
+      return false;
+    mimetype = "video/hevc";
+    break;
   case CODEC_ID_H264:
     if (p->m_g_advancedSettings->m_stagefrightConfig.useAVCcodec == 0)
       return false;
@@ -449,11 +449,20 @@ bool CStageFrightVideo::Open(CDVDStreamInfo &hints)
       return false;
     mimetype = "video/x-vnd.on2.vp8";
     break;
-  case CODEC_ID_VC1:
-  case CODEC_ID_WMV3:
+  case AV_CODEC_ID_VP9:
+    if (p->m_g_advancedSettings->m_stagefrightConfig.useVPXcodec == 0)
+      return false;
+    mimetype = "video/x-vnd.on2.vp9";
+    break;
+  case AV_CODEC_ID_WMV3:
     if (p->m_g_advancedSettings->m_stagefrightConfig.useVC1codec == 0)
       return false;
-    mimetype = "video/vc1";
+    mimetype = "video/x-ms-wmv";
+    break;
+  case AV_CODEC_ID_VC1:
+    if (p->m_g_advancedSettings->m_stagefrightConfig.useVC1codec == 0)
+      return false;
+    mimetype = "video/wvc1";
     break;
   default:
     return false;
@@ -620,7 +629,8 @@ int  CStageFrightVideo::Decode(uint8_t *pData, int iSize, double dts, double pts
       return VC_ERROR;
     }
 
-    fast_memcpy(frame->medbuf->data(), demuxer_content, demuxer_bytes);
+    memcpy(frame->medbuf->data(), demuxer_content, demuxer_bytes);
+    frame->medbuf->set_range(0, demuxer_bytes);
     frame->medbuf->meta_data()->clear();
     frame->medbuf->meta_data()->setInt64(kKeyTime, frame->pts);
 

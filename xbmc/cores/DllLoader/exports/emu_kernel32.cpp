@@ -20,6 +20,7 @@
 
 #include "emu_kernel32.h"
 #include "emu_dummy.h"
+#include "CompileInfo.h"
 #include "utils/log.h"
 
 #include "storage/IoSupport.h"
@@ -37,9 +38,11 @@
 #define __except catch
 #endif
 
-using namespace std;
+#include <string.h>
+#include <vector>
+#include <stdlib.h>
 
-vector<string> m_vecAtoms;
+std::vector<std::string> m_vecAtoms;
 
 //#define API_DEBUG
 
@@ -52,7 +55,7 @@ extern "C" UINT WINAPI dllGetAtomNameA( ATOM nAtom, LPTSTR lpBuffer, int nSize)
 {
   if (nAtom < 1 || nAtom > m_vecAtoms.size() ) return 0;
   nAtom--;
-  string& strAtom = m_vecAtoms[nAtom];
+  std::string& strAtom = m_vecAtoms[nAtom];
   strcpy(lpBuffer, strAtom.c_str());
   return strAtom.size();
 }
@@ -61,7 +64,7 @@ extern "C" ATOM WINAPI dllFindAtomA( LPCTSTR lpString)
 {
   for (int i = 0; i < (int)m_vecAtoms.size(); ++i)
   {
-    string& strAtom = m_vecAtoms[i];
+    std::string& strAtom = m_vecAtoms[i];
     if (strAtom == lpString) return i + 1;
   }
   return 0;
@@ -103,7 +106,7 @@ extern "C" BOOL WINAPI dllFindClose(HANDLE hFile)
 #ifdef TARGET_WINDOWS
 static void to_WIN32_FIND_DATA(LPWIN32_FIND_DATAW wdata, LPWIN32_FIND_DATA data)
 {
-  CStdString strname;
+  std::string strname;
   g_charsetConverter.wToUTF8(wdata->cFileName, strname);
   size_t size = sizeof(data->cFileName) / sizeof(char);
   strncpy(data->cFileName, strname.c_str(), size);
@@ -128,7 +131,7 @@ static void to_WIN32_FIND_DATA(LPWIN32_FIND_DATAW wdata, LPWIN32_FIND_DATA data)
 
 static void to_WIN32_FIND_DATAW(LPWIN32_FIND_DATA data, LPWIN32_FIND_DATAW wdata)
 {
-  CStdStringW strwname;
+  std::wstring strwname;
   g_charsetConverter.utf8ToW(data->cFileName, strwname, false);
   size_t size = sizeof(wdata->cFileName) / sizeof(wchar_t);
   wcsncpy(wdata->cFileName, strwname.c_str(), size);
@@ -166,7 +169,7 @@ extern "C" HANDLE WINAPI dllFindFirstFileA(LPCTSTR lpFileName, LPWIN32_FIND_DATA
 
 #ifdef TARGET_WINDOWS
   struct _WIN32_FIND_DATAW FindFileDataW;
-  CStdStringW strwfile;
+  std::wstring strwfile;
   g_charsetConverter.utf8ToW(CSpecialProtocol::TranslatePath(p), strwfile, false);
   HANDLE res = FindFirstFileW(strwfile.c_str(), &FindFileDataW);
   if (res != INVALID_HANDLE_VALUE)
@@ -269,8 +272,8 @@ static void DumpSystemInfo(const SYSTEM_INFO* si)
 {
   CLog::Log(LOGDEBUG, "  Processor architecture %d\n", si->wProcessorArchitecture);
   CLog::Log(LOGDEBUG, "  Page size: %d\n", si->dwPageSize);
-  CLog::Log(LOGDEBUG, "  Minimum app address: %d\n", si->lpMinimumApplicationAddress);
-  CLog::Log(LOGDEBUG, "  Maximum app address: %d\n", si->lpMaximumApplicationAddress);
+  CLog::Log(LOGDEBUG, "  Minimum app address: %p\n", si->lpMinimumApplicationAddress);
+  CLog::Log(LOGDEBUG, "  Maximum app address: %p\n", si->lpMaximumApplicationAddress);
   CLog::Log(LOGDEBUG, "  Active processor mask: 0x%x\n", si->dwActiveProcessorMask);
   CLog::Log(LOGDEBUG, "  Number of processors: %d\n", si->dwNumberOfProcessors);
   CLog::Log(LOGDEBUG, "  Processor type: 0x%x\n", si->dwProcessorType);
@@ -449,7 +452,7 @@ extern "C" int WINAPI dllGetStartupInfoA(LPSTARTUPINFOA lpStartupInfo)
   lpStartupInfo->lpDesktop = NULL;
   lpStartupInfo->lpReserved = NULL;
   lpStartupInfo->lpReserved2 = 0;
-  lpStartupInfo->lpTitle = (LPTSTR)"XBMC";
+  lpStartupInfo->lpTitle = (LPTSTR)CCompileInfo::GetAppName();
   lpStartupInfo->wShowWindow = 0;
   return 1;
 }
@@ -959,7 +962,7 @@ extern "C" HANDLE WINAPI dllCreateFileA(
     IN HANDLE hTemplateFile
     )
 {
-  return CreateFileA(CSpecialProtocol::TranslatePath(lpFileName), dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
+  return CreateFileA(CSpecialProtocol::TranslatePath(lpFileName).c_str(), dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
 }
 
 extern "C" BOOL WINAPI dllLockFile(HANDLE hFile, DWORD dwFileOffsetLow, DWORD dwFileOffsetHigh, DWORD nNumberOffBytesToLockLow, DWORD nNumberOffBytesToLockHigh)

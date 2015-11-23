@@ -27,8 +27,6 @@
 #include <limits.h>
 
 using namespace XFILE;
-using namespace boost;
-using namespace std;
 
 CDVDInputStreamStack::CDVDInputStreamStack() : CDVDInputStream(DVDSTREAM_TYPE_FILE)
 {
@@ -47,15 +45,16 @@ bool CDVDInputStreamStack::IsEOF()
   return m_eof;
 }
 
-bool CDVDInputStreamStack::Open(const char* path, const std::string& content)
+bool CDVDInputStreamStack::Open(const char* path, const std::string& content, bool contentLookup)
 {
-  if (!CDVDInputStream::Open(path, content))
+  if (!CDVDInputStream::Open(path, content, contentLookup))
     return false;
 
   CStackDirectory dir;
   CFileItemList   items;
 
-  if(!dir.GetDirectory(path, items))
+  const CURL pathToUrl(path);
+  if(!dir.GetDirectory(pathToUrl, items))
   {
     CLog::Log(LOGERROR, "CDVDInputStreamStack::Open - failed to get list of stacked items");
     return false;

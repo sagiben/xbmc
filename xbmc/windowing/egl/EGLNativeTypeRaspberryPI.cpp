@@ -20,12 +20,15 @@
 #include "system.h"
 
 #include <EGL/egl.h>
+#include <math.h>
 #include "EGLNativeTypeRaspberryPI.h"
 #include "utils/log.h"
 #include "guilib/gui3d.h"
 #include "linux/DllBCM.h"
+#include "linux/RBP.h"
 #include "utils/StringUtils.h"
 #include "settings/Settings.h"
+#include <cassert>
 
 #ifndef __VIDEOCORE4__
 #define __VIDEOCORE4__
@@ -57,6 +60,10 @@
 # define DLOG(fmt, args...)
 #endif
 
+#if defined(TARGET_RASPBERRY_PI)
+static void SetResolutionString(RESOLUTION_INFO &res);
+static SDTV_ASPECT_T get_sdtv_aspect_from_display_aspect(float display_aspect);
+#endif
 
 CEGLNativeTypeRaspberryPI::CEGLNativeTypeRaspberryPI()
 {
@@ -183,7 +190,7 @@ int CEGLNativeTypeRaspberryPI::FindMatchingResolution(const RESOLUTION_INFO &res
   for (int i = 0; i < (int)resolutions.size(); i++)
   {
     if(resolutions[i].iScreenWidth == res.iScreenWidth && resolutions[i].iScreenHeight == res.iScreenHeight && resolutions[i].fRefreshRate == res.fRefreshRate &&
-      (resolutions[i].dwFlags & (D3DPRESENTFLAG_MODE3DSBS|D3DPRESENTFLAG_MODE3DTB)) == (res.dwFlags & (D3DPRESENTFLAG_MODE3DSBS|D3DPRESENTFLAG_MODE3DTB)))
+      (resolutions[i].dwFlags & D3DPRESENTFLAG_MODEMASK) == (res.dwFlags & D3DPRESENTFLAG_MODEMASK))
     {
        return i;
     }
@@ -193,13 +200,13 @@ int CEGLNativeTypeRaspberryPI::FindMatchingResolution(const RESOLUTION_INFO &res
 #endif
 
 #if defined(TARGET_RASPBERRY_PI)
-int CEGLNativeTypeRaspberryPI::AddUniqueResolution(const RESOLUTION_INFO &res, std::vector<RESOLUTION_INFO> &resolutions)
+int CEGLNativeTypeRaspberryPI::AddUniqueResolution(RESOLUTION_INFO &res, std::vector<RESOLUTION_INFO> &resolutions)
 {
+  SetResolutionString(res);
   int i = FindMatchingResolution(res, resolutions);
   if (i>=0)
   {  // don't replace a progressive resolution with an interlaced one of same resolution
-     if (!(res.dwFlags & D3DPRESENTFLAG_INTERLACED))
-       resolutions[i] = res;
+     resolutions[i] = res;
   }
   else
   {
@@ -217,7 +224,7 @@ bool CEGLNativeTypeRaspberryPI::SetNativeResolution(const RESOLUTION_INFO &res)
 
   DestroyDispmaxWindow();
 
-  if(!m_fixedMode && GETFLAGS_GROUP(res.dwFlags) && GETFLAGS_MODE(res.dwFlags))
+  if(GETFLAGS_GROUP(res.dwFlags) && GETFLAGS_MODE(res.dwFlags))
   {
     sem_init(&m_tv_synced, 0, 0);
     m_DllBcmHost->vc_tv_register_callback(CallbackTvServiceCallback, this);
@@ -236,6 +243,18 @@ bool CEGLNativeTypeRaspberryPI::SetNativeResolution(const RESOLUTION_INFO &res)
       property.param2 = 0;
       vc_tv_hdmi_set_property(&property);
     }
+
+    HDMI_PROPERTY_PARAM_T property;
+    property.property = HDMI_PROPERTY_PIXEL_CLOCK_TYPE;
+    // if we are closer to ntsc version of framerate, let gpu know
+    int   iFrameRate  = (int)(res.fRefreshRate + 0.5f);
+    if (fabsf(res.fRefreshRate * (1001.0f / 1000.0f) - iFrameRate) < fabsf(res.fRefreshRate - iFrameRate))
+      property.param1 = HDMI_PIXEL_CLOCK_TYPE_NTSC;
+    else
+      property.param1 = HDMI_PIXEL_CLOCK_TYPE_PAL;
+    property.param2 = 0;
+    vc_tv_hdmi_set_property(&property);
+
     int success = m_DllBcmHost->vc_tv_hdmi_power_on_explicit_new(HDMI_MODE_HDMI, GETFLAGS_GROUP(res.dwFlags), GETFLAGS_MODE(res.dwFlags));
 
     if (success == 0)
@@ -259,8 +278,35 @@ bool CEGLNativeTypeRaspberryPI::SetNativeResolution(const RESOLUTION_INFO &res)
 
     m_desktopRes = res;
   }
+  else if(!GETFLAGS_GROUP(res.dwFlags) && GETFLAGS_MODE(res.dwFlags))
+  {
+    sem_init(&m_tv_synced, 0, 0);
+    m_DllBcmHost->vc_tv_register_callback(CallbackTvServiceCallback, this);
 
-  m_dispman_display = m_DllBcmHost->vc_dispmanx_display_open(0);
+    SDTV_OPTIONS_T options;
+    options.aspect = get_sdtv_aspect_from_display_aspect((float)res.iScreenWidth / (float)res.iScreenHeight);
+
+    int success = m_DllBcmHost->vc_tv_sdtv_power_on((SDTV_MODE_T)GETFLAGS_MODE(res.dwFlags), &options);
+
+    if (success == 0)
+    {
+      CLog::Log(LOGDEBUG, "EGL set SDTV mode (%d,%d)=%d\n",
+                          GETFLAGS_GROUP(res.dwFlags), GETFLAGS_MODE(res.dwFlags), success);
+
+      sem_wait(&m_tv_synced);
+    }
+    else
+    {
+      CLog::Log(LOGERROR, "EGL failed to set SDTV mode (%d,%d)=%d\n",
+                          GETFLAGS_GROUP(res.dwFlags), GETFLAGS_MODE(res.dwFlags), success);
+    }
+    m_DllBcmHost->vc_tv_unregister_callback(CallbackTvServiceCallback);
+    sem_destroy(&m_tv_synced);
+
+    m_desktopRes = res;
+  }
+
+  m_dispman_display = g_RBP.OpenDisplay(0);
 
   m_width   = res.iWidth;
   m_height  = res.iHeight;
@@ -355,7 +401,7 @@ static float get_display_aspect_ratio(SDTV_ASPECT_T aspect)
 
 static bool ClampToGUIDisplayLimits(int &width, int &height)
 {
-  float max_height = (float)CSettings::Get().GetInt("videoscreen.limitgui");
+  float max_height = (float)g_RBP.GetGUIResolutionLimit();
   float default_ar = 16.0f/9.0f;
   if (max_height < 540.0f || max_height > 1080.0f)
     max_height = 1080.0f;
@@ -395,6 +441,25 @@ static void SetResolutionString(RESOLUTION_INFO &res)
     res.dwFlags & D3DPRESENTFLAG_MODE3DTB   ? " 3DTB" : "",
     res.dwFlags & D3DPRESENTFLAG_MODE3DSBS  ? " 3DSBS" : "");
 }
+
+static SDTV_ASPECT_T get_sdtv_aspect_from_display_aspect(float display_aspect)
+{
+  SDTV_ASPECT_T aspect;
+  const float delta = 1e-3;
+  if(fabs(get_display_aspect_ratio(SDTV_ASPECT_16_9) - display_aspect) < delta)
+  {
+    aspect = SDTV_ASPECT_16_9;
+  }
+  else if(fabs(get_display_aspect_ratio(SDTV_ASPECT_14_9) - display_aspect) < delta)
+  {
+    aspect = SDTV_ASPECT_14_9;
+  }
+  else
+  {
+    aspect = SDTV_ASPECT_4_3;
+  }
+  return aspect;
+}
 #endif
 
 bool CEGLNativeTypeRaspberryPI::ProbeResolutions(std::vector<RESOLUTION_INFO> &resolutions)
@@ -404,8 +469,6 @@ bool CEGLNativeTypeRaspberryPI::ProbeResolutions(std::vector<RESOLUTION_INFO> &r
 
   if(!m_DllBcmHost)
     return false;
-
-  m_fixedMode               = false;
 
   /* read initial desktop resolution before probe resolutions.
    * probing will replace the desktop resolution when it finds the same one.
@@ -430,7 +493,7 @@ bool CEGLNativeTypeRaspberryPI::ProbeResolutions(std::vector<RESOLUTION_INFO> &r
       m_desktopRes.iScreenWidth = tv_state.display.hdmi.width;
       m_desktopRes.iScreenHeight= tv_state.display.hdmi.height;
       m_desktopRes.dwFlags      = MAKEFLAGS(tv_state.display.hdmi.group, tv_state.display.hdmi.mode, tv_state.display.hdmi.scan_mode);
-      m_desktopRes.fPixelRatio  = get_display_aspect_ratio((HDMI_ASPECT_T)tv_state.display.hdmi.display_options.aspect) / ((float)m_desktopRes.iScreenWidth / (float)m_desktopRes.iScreenHeight);
+      m_desktopRes.fPixelRatio  = tv_state.display.hdmi.display_options.aspect == 0 ? 1.0f : get_display_aspect_ratio((HDMI_ASPECT_T)tv_state.display.hdmi.display_options.aspect) / ((float)m_desktopRes.iScreenWidth / (float)m_desktopRes.iScreenHeight);
       // Also add 3D flags
       if (tv_state.display.hdmi.format_3d == HDMI_3D_FORMAT_SBS_HALF)
       {
@@ -442,9 +505,12 @@ bool CEGLNativeTypeRaspberryPI::ProbeResolutions(std::vector<RESOLUTION_INFO> &r
         m_desktopRes.dwFlags |= D3DPRESENTFLAG_MODE3DTB;
         m_desktopRes.fPixelRatio *= 0.5;
       }
-      m_desktopRes.fRefreshRate = (float)tv_state.display.hdmi.frame_rate;
+      HDMI_PROPERTY_PARAM_T property;
+      property.property = HDMI_PROPERTY_PIXEL_CLOCK_TYPE;
+      vc_tv_hdmi_get_property(&property);
+      m_desktopRes.fRefreshRate = property.param1 == HDMI_PIXEL_CLOCK_TYPE_NTSC ? tv_state.display.hdmi.frame_rate * (1000.0f/1001.0f) : tv_state.display.hdmi.frame_rate;
     }
-    else // sdtv
+    else if ((tv_state.state & ( VC_SDTV_NTSC | VC_SDTV_PAL )) != 0) // sdtv
     {
       m_desktopRes.iScreen      = 0;
       m_desktopRes.bFullScreen  = true;
@@ -452,15 +518,12 @@ bool CEGLNativeTypeRaspberryPI::ProbeResolutions(std::vector<RESOLUTION_INFO> &r
       m_desktopRes.iHeight      = tv_state.display.sdtv.height;
       m_desktopRes.iScreenWidth = tv_state.display.sdtv.width;
       m_desktopRes.iScreenHeight= tv_state.display.sdtv.height;
-      m_desktopRes.dwFlags      = D3DPRESENTFLAG_INTERLACED;
+      m_desktopRes.dwFlags      = MAKEFLAGS(HDMI_RES_GROUP_INVALID, tv_state.display.sdtv.mode, 1);
       m_desktopRes.fRefreshRate = (float)tv_state.display.sdtv.frame_rate;
-      m_desktopRes.fPixelRatio  = get_display_aspect_ratio((SDTV_ASPECT_T)tv_state.display.sdtv.display_options.aspect) / ((float)m_desktopRes.iScreenWidth / (float)m_desktopRes.iScreenHeight);
+      m_desktopRes.fPixelRatio  = tv_state.display.hdmi.display_options.aspect == 0 ? 1.0f : get_display_aspect_ratio((SDTV_ASPECT_T)tv_state.display.sdtv.display_options.aspect) / ((float)m_desktopRes.iScreenWidth / (float)m_desktopRes.iScreenHeight);
     }
 
-    m_desktopRes.strMode = StringUtils::Format("%dx%d", m_desktopRes.iScreenWidth, m_desktopRes.iScreenHeight);
-
-    if((int)m_desktopRes.fRefreshRate > 1)
-      SetResolutionString(m_desktopRes);
+    SetResolutionString(m_desktopRes);
 
     m_initDesktopRes = false;
 
@@ -472,16 +535,10 @@ bool CEGLNativeTypeRaspberryPI::ProbeResolutions(std::vector<RESOLUTION_INFO> &r
   GetSupportedModes(HDMI_RES_GROUP_CEA, resolutions);
   GetSupportedModes(HDMI_RES_GROUP_DMT, resolutions);
 
-  if(resolutions.size() == 0)
   {
-    RESOLUTION_INFO res;
-    CLog::Log(LOGDEBUG, "EGL probe resolution %s:%x\n", m_desktopRes.strMode.c_str(), m_desktopRes.dwFlags);
-
     AddUniqueResolution(m_desktopRes, resolutions);
+    CLog::Log(LOGDEBUG, "EGL probe resolution %s:%x\n", m_desktopRes.strMode.c_str(), m_desktopRes.dwFlags);
   }
-
-  if(resolutions.size() < 2)
-    m_fixedMode = true;
 
   DLOG("CEGLNativeTypeRaspberryPI::ProbeResolutions\n");
   return true;
@@ -519,7 +576,7 @@ void CEGLNativeTypeRaspberryPI::DestroyDispmaxWindow()
 
   if (m_dispman_display != DISPMANX_NO_HANDLE)
   {
-    m_DllBcmHost->vc_dispmanx_display_close(m_dispman_display);
+    g_RBP.CloseDisplay(m_dispman_display);
     m_dispman_display = DISPMANX_NO_HANDLE;
   }
   DLOG("CEGLNativeTypeRaspberryPI::DestroyDispmaxWindow\n");
@@ -567,15 +624,24 @@ void CEGLNativeTypeRaspberryPI::GetSupportedModes(HDMI_RES_GROUP_T group, std::v
       res.iScreenWidth  = tv->width;
       res.iScreenHeight = tv->height;
       res.fPixelRatio   = get_display_aspect_ratio((HDMI_ASPECT_T)tv->aspect_ratio) / ((float)res.iScreenWidth / (float)res.iScreenHeight);
+      res.iSubtitles    = (int)(0.965 * res.iHeight);
 
-      SetResolutionString(res);
+      if (!m_desktopRes.dwFlags && prefer_group == group && prefer_mode == tv->code)
+        m_desktopRes = res;
 
+      if (res.dwFlags & D3DPRESENTFLAG_INTERLACED)
+        continue;
+
+      AddUniqueResolution(res, resolutions);
       CLog::Log(LOGDEBUG, "EGL mode %d: %s (%.2f) %s%s:%x\n", i, res.strMode.c_str(), res.fPixelRatio,
           tv->native ? "N" : "", tv->scan_mode ? "I" : "", tv->code);
 
-      res.iSubtitles    = (int)(0.965 * res.iHeight);
-
-      AddUniqueResolution(res, resolutions);
+      if (tv->frame_rate == 24 || tv->frame_rate == 30 || tv->frame_rate == 60)
+      {
+        RESOLUTION_INFO res2 = res;
+        res2.fRefreshRate  = (float)tv->frame_rate * (1000.0f/1001.0f);
+        AddUniqueResolution(res2, resolutions);
+      }
 
       // Also add 3D versions of modes
       if (tv->struct_3d_mask & HDMI_3D_STRUCT_SIDE_BY_SIDE_HALF_HORIZONTAL)
@@ -584,12 +650,15 @@ void CEGLNativeTypeRaspberryPI::GetSupportedModes(HDMI_RES_GROUP_T group, std::v
         res2.dwFlags |= D3DPRESENTFLAG_MODE3DSBS;
         res2.fPixelRatio    = get_display_aspect_ratio((HDMI_ASPECT_T)tv->aspect_ratio) / ((float)res2.iScreenWidth / (float)res2.iScreenHeight);
         res2.fPixelRatio   *= 2.0f;
-        SetResolutionString(res2);
-        CLog::Log(LOGDEBUG, "EGL mode %d: %s (%.2f)\n", i, res2.strMode.c_str(), res2.fPixelRatio);
-
         res2.iSubtitles    = (int)(0.965 * res2.iHeight);
 
         AddUniqueResolution(res2, resolutions);
+        CLog::Log(LOGDEBUG, "EGL mode %d: %s (%.2f)\n", i, res2.strMode.c_str(), res2.fPixelRatio);
+        if (tv->frame_rate == 24 || tv->frame_rate == 30 || tv->frame_rate == 60)
+        {
+          res2.fRefreshRate  = (float)tv->frame_rate * (1000.0f/1001.0f);
+          AddUniqueResolution(res2, resolutions);
+        }
       }
       if (tv->struct_3d_mask & HDMI_3D_STRUCT_TOP_AND_BOTTOM)
       {
@@ -597,12 +666,16 @@ void CEGLNativeTypeRaspberryPI::GetSupportedModes(HDMI_RES_GROUP_T group, std::v
         res2.dwFlags |= D3DPRESENTFLAG_MODE3DTB;
         res2.fPixelRatio    = get_display_aspect_ratio((HDMI_ASPECT_T)tv->aspect_ratio) / ((float)res2.iScreenWidth / (float)res2.iScreenHeight);
         res2.fPixelRatio   *= 0.5f;
-        SetResolutionString(res2);
-        CLog::Log(LOGDEBUG, "EGL mode %d: %s (%.2f)\n", i, res2.strMode.c_str(), res2.fPixelRatio);
-
         res2.iSubtitles    = (int)(0.965 * res2.iHeight);
 
         AddUniqueResolution(res2, resolutions);
+        CLog::Log(LOGDEBUG, "EGL mode %d: %s (%.2f)\n", i, res2.strMode.c_str(), res2.fPixelRatio);
+        if (tv->frame_rate == 24 || tv->frame_rate == 30 || tv->frame_rate == 60)
+        {
+          res2.fRefreshRate  = (float)tv->frame_rate * (1000.0f/1001.0f);
+          AddUniqueResolution(res2, resolutions);
+        }
+
       }
     }
   }

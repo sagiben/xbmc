@@ -19,7 +19,6 @@
  */
 
 #include "system.h"
-#include "OverlayRenderer.h"
 #include "OverlayRendererUtil.h"
 #include "cores/dvdplayer/DVDCodecs/Overlay/DVDOverlayImage.h"
 #include "cores/dvdplayer/DVDCodecs/Overlay/DVDOverlaySpu.h"
@@ -198,15 +197,15 @@ bool convert_quad(ASS_Image* images, SQuads& quads)
     if((img->color & 0xff) == 0xff || img->w == 0 || img->h == 0)
       continue;
 
-    quads.size_x += img->w;
+    quads.size_x += img->w + 1;
     quads.count++;
   }
 
   if (quads.count == 0)
     return false;
 
-  while(quads.size_x > (int)g_Windowing.GetMaxTextureSize())
-    quads.size_x /= 2;
+  if (quads.size_x > (int)g_Windowing.GetMaxTextureSize())
+    quads.size_x = g_Windowing.GetMaxTextureSize();
 
   int curr_x = 0;
   int curr_y = 0;
@@ -304,7 +303,7 @@ int GetStereoscopicDepth()
   if(g_graphicsContext.GetStereoMode() != RENDER_STEREO_MODE_MONO
   && g_graphicsContext.GetStereoMode() != RENDER_STEREO_MODE_OFF)
   {
-    depth  = CSettings::Get().GetInt("subtitles.stereoscopicdepth");
+    depth  = CSettings::GetInstance().GetInt(CSettings::SETTING_SUBTITLES_STEREOSCOPICDEPTH);
     depth *= (g_graphicsContext.GetStereoView() == RENDER_STEREO_VIEW_LEFT ? 1 : -1);
   }
 

@@ -21,11 +21,8 @@
 #include "DVDPlayerTeletext.h"
 #include "DVDClock.h"
 #include "DVDStreamInfo.h"
-#include "DVDCodecs/DVDCodecs.h"
 #include "utils/log.h"
 #include "threads/SingleLock.h"
-
-using namespace std;
 
 const uint8_t rev_lut[32] =
 {
@@ -121,6 +118,8 @@ bool CDVDTeletextData::CheckStream(CDVDStreamInfo &hints)
 
 bool CDVDTeletextData::OpenStream(CDVDStreamInfo &hints)
 {
+  CloseStream(true);
+
   m_messageQueue.Init();
 
   if (hints.codec == AV_CODEC_ID_DVB_TELETEXT)

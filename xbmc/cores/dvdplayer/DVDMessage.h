@@ -31,7 +31,6 @@
 // include as less is possible to prevent dependencies
 #include "system.h"
 #include "DVDDemuxers/DVDDemux.h"
-#include "DVDMessageTracker.h"
 #include "DVDResource.h"
 
 #include <assert.h>
@@ -69,6 +68,8 @@ public:
 
     PLAYER_CHANNEL_NEXT,            // switches to next playback channel
     PLAYER_CHANNEL_PREV,            // switches to previous playback channel
+    PLAYER_CHANNEL_PREVIEW_NEXT,    // switches to next channel preview (does not switch the channel)
+    PLAYER_CHANNEL_PREVIEW_PREV,    // switches to previous channel preview (does not switch the channel)
     PLAYER_CHANNEL_SELECT_NUMBER,   // switches to the channel with the provided channel number
     PLAYER_CHANNEL_SELECT,          // switches to the provided channel
     PLAYER_STARTED,                 // sent whenever a sub player has finished it's first frame after open
@@ -91,23 +92,17 @@ public:
     AUDIO_SILENCE,
 
     // subtitle related messages
-    SUBTITLE_CLUTCHANGE
+    SUBTITLE_CLUTCHANGE,
+    SUBTITLE_ADDFILE
   };
 
   CDVDMsg(Message msg)
   {
     m_message = msg;
-
-#ifdef DVDDEBUG_MESSAGE_TRACKER
-    g_dvdMessageTracker.Register(this);
-#endif
   }
 
   virtual ~CDVDMsg()
   {
-#ifdef DVDDEBUG_MESSAGE_TRACKER
-    g_dvdMessageTracker.UnRegister(this);
-#endif
   }
 
   /**
@@ -172,7 +167,7 @@ template <typename T>
 class CDVDMsgType : public CDVDMsg
 {
 public:
-  CDVDMsgType(Message type, T value)
+  CDVDMsgType(Message type, const T &value)
     : CDVDMsg(type)
     , m_value(value)
   {}
@@ -211,7 +206,7 @@ private:
 class CDVDMsgPlayerSetState : public CDVDMsg
 {
 public:
-  CDVDMsgPlayerSetState(std::string& state) : CDVDMsg(PLAYER_SET_STATE), m_state(state) {}
+  CDVDMsgPlayerSetState(const std::string& state) : CDVDMsg(PLAYER_SET_STATE), m_state(state) {}
   std::string GetState()                { return m_state; }
 private:
   std::string m_state;
@@ -220,7 +215,7 @@ private:
 class CDVDMsgPlayerSeek : public CDVDMsg
 {
 public:
-  CDVDMsgPlayerSeek(int time, bool backward, bool flush = true, bool accurate = true, bool restore = true, bool trickplay = false)
+  CDVDMsgPlayerSeek(int time, bool backward, bool flush = true, bool accurate = true, bool restore = true, bool trickplay = false, bool sync = true)
     : CDVDMsg(PLAYER_SEEK)
     , m_time(time)
     , m_backward(backward)
@@ -228,6 +223,7 @@ public:
     , m_accurate(accurate)
     , m_restore(restore)
     , m_trickplay(trickplay)
+    , m_sync(sync)
   {}
   int  GetTime()              { return m_time; }
   bool GetBackward()          { return m_backward; }
@@ -235,6 +231,7 @@ public:
   bool GetAccurate()          { return m_accurate; }
   bool GetRestore()           { return m_restore; }
   bool GetTrickPlay()         { return m_trickplay; }
+  bool GetSync()              { return m_sync; }
 private:
   int  m_time;
   bool m_backward;
@@ -242,6 +239,7 @@ private:
   bool m_accurate;
   bool m_restore; // whether to restore any EDL cut time
   bool m_trickplay;
+  bool m_sync;
 };
 
 class CDVDMsgPlayerSeekChapter : public CDVDMsg

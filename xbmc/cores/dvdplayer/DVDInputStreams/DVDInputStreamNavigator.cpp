@@ -63,9 +63,9 @@ CDVDInputStreamNavigator::~CDVDInputStreamNavigator()
   Close();
 }
 
-bool CDVDInputStreamNavigator::Open(const char* strFile, const std::string& content)
+bool CDVDInputStreamNavigator::Open(const char* strFile, const std::string& content, bool contentLookup)
 {
-  if (!CDVDInputStream::Open(strFile, "video/x-dvd-mpeg"))
+  if (!CDVDInputStream::Open(strFile, "video/x-dvd-mpeg", contentLookup))
     return false;
 
   // load libdvdnav.dll
@@ -78,7 +78,7 @@ bool CDVDInputStreamNavigator::Open(const char* strFile, const std::string& cont
   // libdvdcss fails if the file path contains VIDEO_TS.IFO or VIDEO_TS/VIDEO_TS.IFO
   // libdvdnav is still able to play without, so strip them.
 
-  CStdString path = strFile;
+  std::string path = strFile;
   if(URIUtils::GetFileName(path) == "VIDEO_TS.IFO")
     path = URIUtils::GetParentPath(path);
   URIUtils::RemoveSlashAtEnd(path);
@@ -102,7 +102,7 @@ bool CDVDInputStreamNavigator::Open(const char* strFile, const std::string& cont
     return false;
   }
 
-  int region = CSettings::Get().GetInt("dvds.playerregion");
+  int region = CSettings::GetInstance().GetInt(CSettings::SETTING_DVDS_PLAYERREGION);
   int mask = 0;
   if(region > 0)
     mask = 1 << (region-1);
@@ -177,7 +177,7 @@ bool CDVDInputStreamNavigator::Open(const char* strFile, const std::string& cont
   }
 
   // jump directly to title menu
-  if(CSettings::Get().GetBool("dvds.automenu"))
+  if(CSettings::GetInstance().GetBool(CSettings::SETTING_DVDS_AUTOMENU))
   {
     int len, event;
     uint8_t buf[2048];
@@ -471,6 +471,28 @@ int CDVDInputStreamNavigator::ProcessBlock(uint8_t* dest_buffer, int* read)
           m_iPartCount = 0;
         m_dll.dvdnav_get_position(m_dvdnav, &pos, &len);
 
+        // get chapters' timestamps if we have not cached them yet
+        if (m_mapTitleChapters.find(m_iTitle) == m_mapTitleChapters.end())
+        {
+          uint64_t* times = NULL;
+          uint64_t duration;
+          //dvdnav_describe_title_chapters returns 0 on failure and NULL for times
+          int entries = m_dll.dvdnav_describe_title_chapters(m_dvdnav, m_iTitle, &times, &duration);
+
+          if (entries != m_iPartCount)
+            CLog::Log(LOGDEBUG, "%s - Number of chapters/positions differ: Chapters %d, positions %d\n", __FUNCTION__, m_iPartCount, entries);
+
+          if (times)
+          {
+            // the times array stores the end timestampes of the chapters, e.g., times[0] stores the position/beginning of chapter 2
+            m_mapTitleChapters[m_iTitle][1] = 0;
+            for (int i = 0; i < entries - 1; ++i)
+            {
+              m_mapTitleChapters[m_iTitle][i + 2] = times[i] / 90000;
+            }
+            m_dll.dvdnav_free(times);
+          }
+        }
         CLog::Log(LOGDEBUG, "%s - Cell change: Title %d, Chapter %d\n", __FUNCTION__, m_iTitle, m_iPart);
         CLog::Log(LOGDEBUG, "%s - At position %.0f%% inside the feature\n", __FUNCTION__, 100 * (double)pos / (double)len);
         //Get total segment time
@@ -528,7 +550,7 @@ int CDVDInputStreamNavigator::ProcessBlock(uint8_t* dest_buffer, int* read)
           }
           m_iVobUnitCorrection += gap;
 
-          CLog::Log(LOGDEBUG, "DVDNAV_NAV_PACKET - DISCONTINUITY FROM:%"PRId64" TO:%"PRId64" DIFF:%"PRId64, (m_iVobUnitStop * 1000)/90, ((int64_t)pci->pci_gi.vobu_s_ptm*1000)/90, (gap*1000)/90);
+          CLog::Log(LOGDEBUG, "DVDNAV_NAV_PACKET - DISCONTINUITY FROM:%" PRId64" TO:%" PRId64" DIFF:%" PRId64, (m_iVobUnitStop * 1000)/90, ((int64_t)pci->pci_gi.vobu_s_ptm*1000)/90, (gap*1000)/90);
         }
 
         m_iVobUnitStart = pci->pci_gi.vobu_s_ptm;
@@ -852,7 +874,7 @@ bool CDVDInputStreamNavigator::GetSubtitleStreamInfo(const int iId, DVDNavStream
   int streamId = ConvertSubtitleStreamId_XBMCToExternal(iId);
   subp_attr_t subp_attributes;
 
-  if( m_dll.dvdnav_get_stitle_info(m_dvdnav, streamId, &subp_attributes) == DVDNAV_STATUS_OK )
+  if( m_dll.dvdnav_get_spu_attr(m_dvdnav, streamId, &subp_attributes) == DVDNAV_STATUS_OK )
   {
     SetSubtitleStreamName(info, subp_attributes);
 
@@ -861,10 +883,7 @@ bool CDVDInputStreamNavigator::GetSubtitleStreamInfo(const int iId, DVDNavStream
     lang[1] = (subp_attributes.lang_code & 255);
     lang[0] = (subp_attributes.lang_code >> 8) & 255;
 
-    CStdString temp;
-    g_LangCodeExpander.ConvertToThreeCharCode(temp, lang);
-    info.language = temp;
-
+    g_LangCodeExpander.ConvertToISO6392T(lang, info.language);
     return true;
   }
   return false;
@@ -1038,7 +1057,7 @@ bool CDVDInputStreamNavigator::GetAudioStreamInfo(const int iId, DVDNavStreamInf
   int streamId = ConvertAudioStreamId_XBMCToExternal(iId);
   audio_attr_t audio_attributes;
 
-  if( m_dll.dvdnav_get_audio_info(m_dvdnav, streamId, &audio_attributes) == DVDNAV_STATUS_OK )
+  if( m_dll.dvdnav_get_audio_attr(m_dvdnav, streamId, &audio_attributes) == DVDNAV_STATUS_OK )
   {
     SetAudioStreamName(info, audio_attributes);
 
@@ -1047,9 +1066,7 @@ bool CDVDInputStreamNavigator::GetAudioStreamInfo(const int iId, DVDNavStreamInf
     lang[1] = (audio_attributes.lang_code & 255);
     lang[0] = (audio_attributes.lang_code >> 8) & 255;
 
-    CStdString temp;
-    g_LangCodeExpander.ConvertToThreeCharCode(temp, lang);
-    info.language = temp;
+    g_LangCodeExpander.ConvertToISO6392T(lang, info.language);
 
     info.channels = audio_attributes.channels + 1;
 
@@ -1454,4 +1471,19 @@ bool CDVDInputStreamNavigator::GetDVDSerialString(std::string& serialStr)
   m_dll.dvdnav_get_serial_string(m_dvdnav, &str);
   serialStr.assign(str);
   return true;
+}
+
+int64_t CDVDInputStreamNavigator::GetChapterPos(int ch)
+{
+  if (ch == -1 || ch > GetChapterCount()) 
+    ch = GetChapter();
+
+  std::map<int, std::map<int, int64_t>>::iterator title = m_mapTitleChapters.find(m_iTitle);
+  if (title != m_mapTitleChapters.end())
+  {
+    std::map<int, int64_t>::iterator chapter = title->second.find(ch);
+    if (chapter != title->second.end())
+      return chapter->second;
+  }
+  return 0;
 }

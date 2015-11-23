@@ -16,8 +16,15 @@ PREFIX=@prefix@/@deps_dir@
 NATIVEPREFIX=@prefix@/@tool_dir@
 ARCHIVE_TOOL_NATIVE=$(NATIVEPREFIX)/bin/tar
 OS=@platform_os@
+NATIVE_OS=@build_os@
 CROSS_COMPILING=@cross_compiling@
 ARCH_DEFINES=@ARCH_DEFINES@
+NATIVE_ARCH_DEFINES=@NATIVE_ARCH_DEFINES@
+TARGET_PLATFORM=@use_platform@
+XCODE_VERSION=@use_xcode@
+AAPT=@AAPT@
+DX=@DX@
+ZIPALIGN=@ZIPALIGN@
 
 HAS_ZLIB=@has_zlib@
 NEED_LIBICONV=@need_libiconv@
@@ -25,7 +32,10 @@ LINK_ICONV=@link_iconv@
 ENABLE_GPLV3=@use_gplv3@
 HAS_LIBCRYSTAX=@has_libcrystax@
 
-BASE_URL=http://mirrors.xbmc.org/build-deps/sources
+BASE_URL=http://mirrors.kodi.tv/build-deps/sources
+ifneq ($(KODI_MIRROR),)
+BASE_URL=$(KODI_MIRROR)/build-deps/sources
+endif
 RETRIEVE_TOOL_FLAGS=-Ls --create-dirs -f -O
 ARCHIVE_TOOL_FLAGS=--strip-components=1 -xf
 CONFIG_SUB=@prefix@/@tool_dir@/share/automake-1.11/config.sub
@@ -83,4 +93,5 @@ export LIBTOOL=@prefix@/@tool_dir@/bin/libtool
 export LIBTOOLIZE=@prefix@/@tool_dir@/bin/libtoolize
 
 export AUTORECONF=@prefix@/@tool_dir@/bin/autoreconf
+export JSON_BUILDER=$(NATIVEPREFIX)/bin/JsonSchemaBuilder
 

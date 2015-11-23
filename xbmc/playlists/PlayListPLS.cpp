@@ -18,23 +18,28 @@
  *
  */
 
+#include <iostream>
+#include <memory>
+#include <string>
+#include <vector>
+
 #include "PlayListPLS.h"
 #include "PlayListFactory.h"
 #include "Util.h"
 #include "utils/StringUtils.h"
 #include "filesystem/File.h"
-#include "settings/AdvancedSettings.h"
+#include "video/VideoInfoTag.h"
 #include "music/tags/MusicInfoTag.h"
 #include "utils/CharsetConverter.h"
 #include "utils/log.h"
 #include "utils/URIUtils.h"
 #include "utils/XBMCTinyXML.h"
+#include "utils/XMLUtils.h"
 
-using namespace std;
 using namespace XFILE;
 using namespace PLAYLIST;
 
-#define START_PLAYLIST_MARKER "[playlist]"
+#define START_PLAYLIST_MARKER "[playlist]" // may be case-insentive (equivalent to .ini file on win32)
 #define PLAYLIST_NAME     "PlaylistName"
 
 /*----------------------------------------------------------------------
@@ -55,10 +60,10 @@ CPlayListPLS::CPlayListPLS(void)
 CPlayListPLS::~CPlayListPLS(void)
 {}
 
-bool CPlayListPLS::Load(const CStdString &strFile)
+bool CPlayListPLS::Load(const std::string &strFile)
 {
   //read it from the file
-  CStdString strFileName(strFile);
+  std::string strFileName(strFile);
   m_strPlayListName = URIUtils::GetFileName(strFileName);
 
   Clear();
@@ -87,7 +92,7 @@ bool CPlayListPLS::Load(const CStdString &strFile)
   }
 
   char szLine[4096];
-  CStdString strLine;
+  std::string strLine;
 
   // run through looking for the [playlist] marker.
   // if we find another http stream, then load it.
@@ -100,7 +105,7 @@ bool CPlayListPLS::Load(const CStdString &strFile)
     }
     strLine = szLine;
     StringUtils::Trim(strLine);
-    if(strLine.Equals(START_PLAYLIST_MARKER))
+    if(StringUtils::EqualsNoCase(strLine, START_PLAYLIST_MARKER))
       break;
 
     // if there is something else before playlist marker, this isn't a pls file
@@ -116,9 +121,9 @@ bool CPlayListPLS::Load(const CStdString &strFile)
     size_t iPosEqual = strLine.find("=");
     if (iPosEqual != std::string::npos)
     {
-      CStdString strLeft = strLine.substr(0, iPosEqual);
+      std::string strLeft = strLine.substr(0, iPosEqual);
       iPosEqual++;
-      CStdString strValue = strLine.substr(iPosEqual);
+      std::string strValue = strLine.substr(iPosEqual);
       StringUtils::ToLower(strLeft);
       StringUtils::TrimLeft(strLeft);
 
@@ -128,7 +133,7 @@ bool CPlayListPLS::Load(const CStdString &strFile)
       }
       else if (StringUtils::StartsWith(strLeft, "file"))
       {
-        vector <int>::size_type idx = atoi(strLeft.c_str() + 4);
+        std::vector <int>::size_type idx = atoi(strLeft.c_str() + 4);
         if (!Resize(idx))
         {
           bFailed = true;
@@ -136,7 +141,8 @@ bool CPlayListPLS::Load(const CStdString &strFile)
         }
 
         // Skip self - do not load playlist recursively
-        if (URIUtils::GetFileName(strValue).Equals(URIUtils::GetFileName(strFileName)))
+        if (StringUtils::EqualsNoCase(URIUtils::GetFileName(strValue),
+                                      URIUtils::GetFileName(strFileName)))
           continue;
 
         if (m_vecItems[idx - 1]->GetLabel().empty())
@@ -152,7 +158,7 @@ bool CPlayListPLS::Load(const CStdString &strFile)
       }
       else if (StringUtils::StartsWith(strLeft, "title"))
       {
-        vector <int>::size_type idx = atoi(strLeft.c_str() + 5);
+        std::vector <int>::size_type idx = atoi(strLeft.c_str() + 5);
         if (!Resize(idx))
         {
           bFailed = true;
@@ -163,7 +169,7 @@ bool CPlayListPLS::Load(const CStdString &strFile)
       }
       else if (StringUtils::StartsWith(strLeft, "length"))
       {
-        vector <int>::size_type idx = atoi(strLeft.c_str() + 6);
+        std::vector <int>::size_type idx = atoi(strLeft.c_str() + 6);
         if (!Resize(idx))
         {
           bFailed = true;
@@ -203,45 +209,45 @@ bool CPlayListPLS::Load(const CStdString &strFile)
   return true;
 }
 
-void CPlayListPLS::Save(const CStdString& strFileName) const
+void CPlayListPLS::Save(const std::string& strFileName) const
 {
   if (!m_vecItems.size()) return ;
-  CStdString strPlaylist = CUtil::MakeLegalPath(strFileName);
+  std::string strPlaylist = CUtil::MakeLegalPath(strFileName);
   CFile file;
   if (!file.OpenForWrite(strPlaylist, true))
   {
     CLog::Log(LOGERROR, "Could not save PLS playlist: [%s]", strPlaylist.c_str());
     return;
   }
-  CStdString write;
+  std::string write;
   write += StringUtils::Format("%s\n", START_PLAYLIST_MARKER);
-  CStdString strPlayListName=m_strPlayListName;
+  std::string strPlayListName=m_strPlayListName;
   g_charsetConverter.utf8ToStringCharset(strPlayListName);
   write += StringUtils::Format("PlaylistName=%s\n", strPlayListName.c_str() );
 
   for (int i = 0; i < (int)m_vecItems.size(); ++i)
   {
     CFileItemPtr item = m_vecItems[i];
-    CStdString strFileName=item->GetPath();
+    std::string strFileName=item->GetPath();
     g_charsetConverter.utf8ToStringCharset(strFileName);
-    CStdString strDescription=item->GetLabel();
+    std::string strDescription=item->GetLabel();
     g_charsetConverter.utf8ToStringCharset(strDescription);
     write += StringUtils::Format("File%i=%s\n", i + 1, strFileName.c_str() );
     write += StringUtils::Format("Title%i=%s\n", i + 1, strDescription.c_str() );
     write += StringUtils::Format("Length%i=%u\n", i + 1, item->GetMusicInfoTag()->GetDuration() / 1000 );
   }
 
-  write += StringUtils::Format("NumberOfEntries=%i\n", m_vecItems.size());
+  write += StringUtils::Format("NumberOfEntries=%" PRIuS"\n", m_vecItems.size());
   write += StringUtils::Format("Version=2\n");
   file.Write(write.c_str(), write.size());
   file.Close();
 }
 
-bool CPlayListASX::LoadAsxIniInfo(istream &stream)
+bool CPlayListASX::LoadAsxIniInfo(std::istream &stream)
 {
   CLog::Log(LOGINFO, "Parsing INI style ASX");
 
-  string name, value;
+  std::string name, value;
 
   while( stream.good() )
   {
@@ -273,13 +279,15 @@ bool CPlayListASX::LoadAsxIniInfo(istream &stream)
     CLog::Log(LOGINFO, "Adding element %s=%s", name.c_str(), value.c_str());
     CFileItemPtr newItem(new CFileItem(value));
     newItem->SetPath(value);
+    if (newItem->IsVideo() && !newItem->HasVideoInfoTag()) // File is a video and needs a VideoInfoTag
+      newItem->GetVideoInfoTag()->Reset(); // Force VideoInfoTag creation
     Add(newItem);
   }
 
   return true;
 }
 
-bool CPlayListASX::LoadData(istream& stream)
+bool CPlayListASX::LoadData(std::istream& stream)
 {
   CLog::Log(LOGNOTICE, "Parsing ASX");
 
@@ -303,7 +311,7 @@ bool CPlayListASX::LoadData(istream& stream)
     // lowercase every element
     TiXmlNode *pNode = pRootElement;
     TiXmlNode *pChild = NULL;
-    CStdString value;
+    std::string value;
     value = pNode->Value();
     StringUtils::ToLower(value);
     pNode->SetValue(value);
@@ -336,30 +344,30 @@ bool CPlayListASX::LoadData(istream& stream)
       pChild = pNode;
       pNode = pNode->Parent();
     }
-    CStdString roottitle = "";
+    std::string roottitle;
     TiXmlElement *pElement = pRootElement->FirstChildElement();
     while (pElement)
     {
       value = pElement->Value();
-      if (value == "title")
+      if (value == "title" && !pElement->NoChildren())
       {
-        roottitle = pElement->GetText();
+        roottitle = pElement->FirstChild()->ValueStr();
       }
       else if (value == "entry")
       {
-        CStdString title(roottitle);
+        std::string title(roottitle);
 
         TiXmlElement *pRef = pElement->FirstChildElement("ref");
         TiXmlElement *pTitle = pElement->FirstChildElement("title");
 
-        if(pTitle)
-          title = pTitle->GetText();
+        if(pTitle && !pTitle->NoChildren())
+          title = pTitle->FirstChild()->ValueStr();
 
         while (pRef)
         { // multiple references may apear for one entry
           // duration may exist on this level too
-          value = pRef->Attribute("href");
-          if (value != "")
+          value = XMLUtils::GetAttribute(pRef, "href");
+          if (!value.empty())
           {
             if(title.empty())
               title = value;
@@ -374,10 +382,10 @@ bool CPlayListASX::LoadData(istream& stream)
       }
       else if (value == "entryref")
       {
-        value = pElement->Attribute("href");
-        if (value != "")
+        value = XMLUtils::GetAttribute(pElement, "href");
+        if (!value.empty())
         { // found an entryref, let's try loading that url
-          auto_ptr<CPlayList> playlist(CPlayListFactory::Create(value));
+          std::unique_ptr<CPlayList> playlist(CPlayListFactory::Create(value));
           if (NULL != playlist.get())
             if (playlist->Load(value))
               Add(*playlist);
@@ -391,11 +399,11 @@ bool CPlayListASX::LoadData(istream& stream)
 }
 
 
-bool CPlayListRAM::LoadData(istream& stream)
+bool CPlayListRAM::LoadData(std::istream& stream)
 {
   CLog::Log(LOGINFO, "Parsing RAM");
 
-  CStdString strMMS;
+  std::string strMMS;
   while( stream.peek() != '\n' && stream.peek() != '\r' )
     strMMS += stream.get();
 
@@ -406,7 +414,7 @@ bool CPlayListRAM::LoadData(istream& stream)
   return true;
 }
 
-bool CPlayListPLS::Resize(vector <int>::size_type newSize)
+bool CPlayListPLS::Resize(std::vector <int>::size_type newSize)
 {
   if (newSize == 0)
     return false;

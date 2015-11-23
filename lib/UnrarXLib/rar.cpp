@@ -1,10 +1,8 @@
 #include "rar.hpp"
 #include "UnrarX.hpp"
-#include "guilib/GUIWindowManager.h"
-#include "dialogs/GUIDialogProgress.h"
 #include "filesystem/File.h"
-
 #include "smallfn.cpp"
+#include <memory>
 
 using namespace std;
 
@@ -142,7 +140,7 @@ int main(int argc, char *argv[])
           or NULL for all files.
   libpassword   - Password (for encrypted archives)
 \*-------------------------------------------------------------------------*/
-int urarlib_get(char *rarfile, char *targetPath, char *fileToExtract, char *libpassword, int64_t* iOffset, bool bShowProgress)
+int urarlib_get(char *rarfile, char *targetPath, char *fileToExtract, char *libpassword, int64_t* iOffset, progress_callback progress, void *context)
 {
   InitCRC();
   int bRes = 1;
@@ -200,16 +198,8 @@ int urarlib_get(char *rarfile, char *targetPath, char *fileToExtract, char *libp
             pExtract->GetDataIO().TotalArcSize+=FD.Size;
           pExtract->ExtractArchiveInit(pCmd.get(),*pArc);
 
-          if (bShowProgress)
-          {
-            pExtract->GetDataIO().m_pDlgProgress = (CGUIDialogProgress*)g_windowManager.GetWindow(WINDOW_DIALOG_PROGRESS);
-            if (pExtract->GetDataIO().m_pDlgProgress)
-            {
-              pExtract->GetDataIO().m_pDlgProgress->SetHeading(fileToExtract);
-              pExtract->GetDataIO().m_pDlgProgress->SetCanCancel(false);
-              pExtract->GetDataIO().m_pDlgProgress->StartModal();
-            }
-          }
+          pExtract->GetDataIO().m_progress = progress;
+          pExtract->GetDataIO().m_context = context;
 
           int64_t iOff=0;
           bool bSeeked = false;
@@ -237,8 +227,6 @@ int urarlib_get(char *rarfile, char *targetPath, char *fileToExtract, char *libp
             
             if (pExtract->GetDataIO().bQuit) 
             {
-              if (pExtract->GetDataIO().m_pDlgProgress)
-                pExtract->GetDataIO().m_pDlgProgress->Close();
               bRes = 2;
               break;
             }
@@ -269,12 +257,7 @@ int urarlib_get(char *rarfile, char *targetPath, char *fileToExtract, char *libp
           }
 
           pExtract->GetDataIO().ProcessedArcSize+=FD.Size;         
-          if (pExtract->GetDataIO().m_pDlgProgress)
-            pExtract->GetDataIO().m_pDlgProgress->ShowProgressBar(false);
         }
-        if (bShowProgress)
-          if (pExtract->GetDataIO().m_pDlgProgress)
-            pExtract->GetDataIO().m_pDlgProgress->Close();
       }
     }
   }

@@ -19,31 +19,11 @@
  */
 
 #include "swighelper.h"
-#include "Dialog.h"
 
 namespace XBMCAddon
 {
   namespace xbmcgui
   {
-    /**
-     * lock() -- Lock the gui until xbmcgui.unlock() is called.\n
-     * \n
-     * *Note, This will improve performance when doing a lot of gui manipulation at once.\n
-     *        The main program (xbmc itself) will freeze until xbmcgui.unlock() is called.\n
-     * 
-     * example:
-     *   - xbmcgui.lock()
-     */
-    void lock();
-
-    /**
-     * unlock() -- Unlock the gui from a lock() call.
-     * 
-     * example:
-     *   - xbmcgui.unlock()
-     */
-    void unlock();
-
     /**
      * getCurrentWindowId() -- Returns the id for the current 'active' window as an integer.
      * 
@@ -64,8 +44,6 @@ namespace XBMCAddon
     SWIG_CONSTANT2(int,ICON_OVERLAY_RAR, CGUIListItem::ICON_OVERLAY_RAR);
     SWIG_CONSTANT2(int,ICON_OVERLAY_ZIP, CGUIListItem::ICON_OVERLAY_ZIP);
     SWIG_CONSTANT2(int,ICON_OVERLAY_LOCKED, CGUIListItem::ICON_OVERLAY_LOCKED);
-    SWIG_CONSTANT2(int,ICON_OVERLAY_HAS_TRAINER, CGUIListItem::ICON_OVERLAY_HAS_TRAINER);
-    SWIG_CONSTANT2(int,ICON_OVERLAY_TRAINED, CGUIListItem::ICON_OVERLAY_TRAINED);
     SWIG_CONSTANT2(int,ICON_OVERLAY_UNWATCHED, CGUIListItem::ICON_OVERLAY_UNWATCHED);
     SWIG_CONSTANT2(int,ICON_OVERLAY_WATCHED, CGUIListItem::ICON_OVERLAY_WATCHED);
     SWIG_CONSTANT2(int,ICON_OVERLAY_HD, CGUIListItem::ICON_OVERLAY_HD);

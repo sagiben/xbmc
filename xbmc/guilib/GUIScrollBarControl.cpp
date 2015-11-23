@@ -19,7 +19,7 @@
  */
 
 #include "GUIScrollBarControl.h"
-#include "Key.h"
+#include "input/Key.h"
 #include "utils/StringUtils.h"
 
 #define MIN_NIB_SIZE 4.0f
@@ -275,13 +275,6 @@ bool CGUIScrollBar::UpdateBarSize()
   return changed;
 }
 
-bool CGUIScrollBar::HitTest(const CPoint &point) const
-{
-  if (m_guiBackground.HitTest(point)) return true;
-  if (m_guiBarNoFocus.HitTest(point)) return true;
-  return false;
-}
-
 void CGUIScrollBar::SetFromPosition(const CPoint &point)
 {
   float fPercent;
@@ -360,7 +353,7 @@ EVENT_RESULT CGUIScrollBar::OnMouseEvent(const CPoint &point, const CMouseEvent 
   return EVENT_RESULT_UNHANDLED;
 }
 
-CStdString CGUIScrollBar::GetDescription() const
+std::string CGUIScrollBar::GetDescription() const
 {
   return StringUtils::Format("%i/%i", m_offset, m_numItems);
 }

@@ -21,21 +21,23 @@
 #include "URL.h"
 #include "XBDateTime.h"
 #include "utils/Job.h"
+#include "settings/lib/ISettingCallback.h"
 #include "settings/lib/ISettingsHandler.h"
+#include <string>
 
-class CWakeOnAccess : private IJobCallback, public ISettingsHandler
+class CWakeOnAccess : private IJobCallback, public ISettingCallback, public ISettingsHandler
 {
 public:
-  static CWakeOnAccess &Get();
+  static CWakeOnAccess &GetInstance();
 
   bool WakeUpHost (const CURL& fileUrl);
-  bool WakeUpHost (const CStdString& hostName, const std::string& customMessage);
+  bool WakeUpHost (const std::string& hostName, const std::string& customMessage);
 
   void QueueMACDiscoveryForAllRemotes();
 
-  virtual void OnJobComplete(unsigned int jobID, bool success, CJob *job);
-  virtual void OnSettingsLoaded();
-  virtual void OnSettingsSaved();
+  virtual void OnJobComplete(unsigned int jobID, bool success, CJob *job) override;
+  virtual void OnSettingChanged(const CSetting *setting) override;
+  virtual void OnSettingsLoaded() override;
 
   // struct to keep per host settings
   struct WakeUpEntry
@@ -57,21 +59,21 @@ public:
 
 private:
   CWakeOnAccess();
-  CStdString GetSettingFile();
+  std::string GetSettingFile();
   void LoadFromXML();
   void SaveToXML();
 
   void SetEnabled(bool enabled);
   bool IsEnabled() const { return m_enabled; }
 
-  void QueueMACDiscoveryForHost(const CStdString& host);
-  void SaveMACDiscoveryResult(const CStdString& host, const CStdString& mac);
+  void QueueMACDiscoveryForHost(const std::string& host);
+  void SaveMACDiscoveryResult(const std::string& host, const std::string& mac);
 
   typedef std::vector<WakeUpEntry> EntriesVector;
   EntriesVector m_entries;
   CCriticalSection m_entrylist_protect;
-  bool FindOrTouchHostEntry (const CStdString& hostName, WakeUpEntry& server);
-  void TouchHostEntry (const CStdString& hostName);
+  bool FindOrTouchHostEntry (const std::string& hostName, WakeUpEntry& server);
+  void TouchHostEntry (const std::string& hostName);
 
   unsigned int m_netinit_sec, m_netsettle_ms; //time to wait for network connection
 

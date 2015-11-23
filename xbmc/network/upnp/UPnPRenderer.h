@@ -18,8 +18,11 @@
  *
  */
 #pragma once
-#include "PltMediaRenderer.h"
+#include <Platinum/Source/Devices/MediaRenderer/PltMediaRenderer.h>
+
 #include "interfaces/IAnnouncer.h"
+
+class CVariant;
 
 namespace UPNP
 {

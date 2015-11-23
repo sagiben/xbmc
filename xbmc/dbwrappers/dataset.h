@@ -37,9 +37,6 @@
 #include "qry_dat.h"
 #include <stdarg.h>
 
-
-
-
 namespace dbiplus {
 class Dataset;		// forward declaration of class Dataset
 
@@ -68,6 +65,7 @@ class Dataset;		// forward declaration of class Dataset
 class Database  {
 protected:
   bool active;
+  bool compression;
   std::string error, // Error description
     host, port, db, login, passwd, //Login info
     sequence_table, //Sequence table for nextid
@@ -108,13 +106,14 @@ public:
   const char *getSequenceTable(void) { return sequence_table.c_str(); }
 /* Get the default character set */
   const char *getDefaultCharset(void) { return default_charset.c_str(); }
-/* Sets SSL configuration */
-  virtual void setSSLConfig(const char *newKey, const char *newCert, const char *newCA, const char *newCApath, const char *newCiphers) {
+/* Sets configuration */
+  virtual void setConfig(const char *newKey, const char *newCert, const char *newCA, const char *newCApath, const char *newCiphers, bool newCompression) {
     key = newKey;
     cert = newCert;
     ca = newCA;
     capath = newCApath;
     ciphers = newCiphers;
+    compression = newCompression;
   }
 
 /* virtual methods that must be overloaded in derived classes */
@@ -128,7 +127,7 @@ public:
   virtual int connectFull( const char *newDb, const char *newHost=NULL,
                       const char *newLogin=NULL, const char *newPasswd=NULL,const char *newPort=NULL,
                       const char *newKey=NULL, const char *newCert=NULL, const char *newCA=NULL, 
-                      const char *newCApath=NULL, const char *newCiphers=NULL);
+                      const char *newCApath=NULL, const char *newCiphers=NULL, bool newCompression = false);
   virtual void disconnect(void) { active = false; }
   virtual int reset(void) { return DB_COMMAND_OK; }
   virtual int create(void) { return DB_COMMAND_OK; }
@@ -288,7 +287,7 @@ public:
 /* status active is OK query */
   virtual bool isActive(void) { return active; }
 
-  virtual void setSqlParams(const char *sqlFrmt, sqlType t, ...); 
+  virtual void setSqlParams(const char *sqlFrmt, sqlType t, ...);
 
 
 /* error handling */
@@ -309,7 +308,7 @@ public:
   virtual int  exec() = 0;
   virtual const void* getExecRes()=0;
 /* as open, but with our query exept Sql */
-  virtual bool query(const char *sql) = 0;
+  virtual bool query(const std::string &sql) = 0;
 /* Close SQL Query*/
   virtual void close();
 /* This function looks for field Field_name with value equal Field_value
@@ -407,6 +406,58 @@ public:
   const sql_record* const get_sql_record();
 
  private:
+
+  unsigned int fieldIndexMapID;
+
+/* Struct to store an indexMapped field access entry */
+  struct FieldIndexMapEntry
+  {
+   FieldIndexMapEntry(const char *name):fieldIndex(~0), strName(name){};
+   bool operator < (const FieldIndexMapEntry &other) const {return strName < other.strName;};
+   unsigned int fieldIndex;
+   std::string strName;
+  };
+
+/* Comparator to quickly find an indexMapped field access entry in the unsorted fieldIndexMap_Entries vector */
+  struct FieldIndexMapComparator
+  {
+   FieldIndexMapComparator(const std::vector<FieldIndexMapEntry> &c): c_(c) {};
+   bool operator()(const unsigned int &v, const FieldIndexMapEntry &o) const
+   {
+     return c_[v] < o;
+   };
+   bool operator()(const unsigned int &v1, const unsigned int &v2) const
+   {
+     return c_[v1] < c_[v2];
+   };
+   bool operator()(const FieldIndexMapEntry &o, const unsigned int &v) const
+   {
+     return o < c_[v];
+   };
+  private:
+   const std::vector<FieldIndexMapEntry> &c_;
+  };
+
+/* Store string to field index translation in the same order
+   fields are accessed by field_value([string]).
+   Idea behind it:
+   - Open a SELECT query with many results
+   - track field access of the first row
+   - use this information for the following rows by just looking at the next
+     element in this vector
+*/
+  std::vector<FieldIndexMapEntry> fieldIndexMap_Entries;
+
+/* Hold the sorting order regarding FieldIndexMapEntry::strName in the
+   fieldIndexMap_Entries vector.
+   If "next element" in fieldIndexMap_Entries does not match,
+   do a fast binary search inside it using the fieldIndexMap_Sorter.
+*/
+  std::vector<unsigned int> fieldIndexMap_Sorter;
+
+/* Get the column index from a string field_value request */
+  bool get_index_map_entry(const char *f_name);
+
   void set_ds_state(dsStates new_state) {ds_state = new_state;};	
  public:
 /* return ds_state value */

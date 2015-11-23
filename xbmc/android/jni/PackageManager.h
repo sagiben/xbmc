@@ -26,6 +26,7 @@ class CJNIIntent;
 class CJNIDrawable;
 class CJNIApplicationInfo;
 class CJNICharSequence;
+class CJNIResources;
 
 class CJNIPackageManager : public CJNIBase
 {
@@ -34,9 +35,12 @@ public:
   ~CJNIPackageManager() {};
 
   CJNIIntent        getLaunchIntentForPackage(const std::string &package);
+  CJNIIntent        getLeanbackLaunchIntentForPackage(const std::string &package);
   CJNIDrawable      getApplicationIcon(const std::string &package);
   CJNIList<CJNIApplicationInfo> getInstalledApplications(int flags);
   CJNICharSequence  getApplicationLabel(const CJNIApplicationInfo &info);
+  CJNIResources     getResourcesForApplication(const std::string &package);
+  CJNIResources     getResourcesForApplication(const CJNIApplicationInfo &info);
 
   static void       PopulateStaticFields();
   static int        GET_ACTIVITIES;

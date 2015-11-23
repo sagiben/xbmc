@@ -1,8 +1,8 @@
 #pragma once
 
 /*
- *      Copyright (C) 2005-2013 Team XBMC
- *      http://xbmc.org
+ *      Copyright (C) 2005-2015 Team XBMC
+ *      http://kodi.tv/
  *
  *  This Program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -20,13 +20,10 @@
  *
  */
 
-//  CDetectDVDMedia   -  Thread running in the background to detect a CD change
-//       and the filesystem
+//  CDetectDVDMedia
+//  Thread running in the background to detect a CD change and the filesystem
 //
 // by Bobbin007 in 2003
-//
-//
-//
 
 #include "system.h"
 
@@ -35,8 +32,8 @@
 #include "threads/CriticalSection.h"
 
 #include "threads/Thread.h"
-#include "utils/StdString.h"
-#include "boost/shared_ptr.hpp"
+#include <memory>
+#include <string>
 
 namespace MEDIA_DETECT
 {
@@ -59,8 +56,8 @@ public:
   static CCdInfo* GetCdInfo();
   static CEvent m_evAutorun;
 
-  static const CStdString &GetDVDLabel();
-  static const CStdString &GetDVDPath();
+  static const std::string &GetDVDLabel();
+  static const std::string &GetDVDPath();
 
   static void UpdateState();
 protected:
@@ -69,7 +66,7 @@ protected:
 
 
   void DetectMediaType();
-  void SetNewDVDShareUrl( const CStdString& strNewUrl, bool bCDDA, const CStdString& strDiscLabel );
+  void SetNewDVDShareUrl( const std::string& strNewUrl, bool bCDDA, const std::string& strDiscLabel );
 
 private:
   static CCriticalSection m_muReadingMedia;
@@ -86,10 +83,10 @@ private:
   DWORD m_dwTrayCount;
   DWORD m_dwLastTrayState;
 
-  static CStdString m_diskLabel;
-  static CStdString m_diskPath;
+  static std::string m_diskLabel;
+  static std::string m_diskPath;
 
-  boost::shared_ptr<CLibcdio> m_cdio;
+  std::shared_ptr<CLibcdio> m_cdio;
 };
 }
 #endif

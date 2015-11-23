@@ -28,7 +28,6 @@
 #include "settings/AdvancedSettings.h"
 #include "windowing/WindowingFactory.h"
 #include "utils/log.h"
-#include "utils/TimeUtils.h"
 #include "utils/StringUtils.h"
 
 CDummyVideoPlayer::CDummyVideoPlayer(IPlayerCallback& callback)
@@ -88,16 +87,10 @@ void CDummyVideoPlayer::Process()
     g_graphicsContext.Lock();
     if (g_graphicsContext.IsFullScreenVideo())
     {
-#ifdef HAS_DX	
-      g_Windowing.Get3DDevice()->BeginScene();
-#endif
       g_graphicsContext.Clear();
       g_graphicsContext.SetRenderingResolution(g_graphicsContext.GetResInfo(), false);
       Render();
       g_application.RenderNoPresent();
-#ifdef HAS_DX     
-      g_Windowing.Get3DDevice()->EndScene();
-#endif      
     }
     g_graphicsContext.Unlock();
   }
@@ -170,17 +163,17 @@ void CDummyVideoPlayer::Seek(bool bPlus, bool bLargeStep, bool bChapterOverride)
   }
 }
 
-void CDummyVideoPlayer::GetAudioInfo(CStdString& strAudioInfo)
+void CDummyVideoPlayer::GetAudioInfo(std::string& strAudioInfo)
 {
   strAudioInfo = "DummyVideoPlayer - nothing to see here";
 }
 
-void CDummyVideoPlayer::GetVideoInfo(CStdString& strVideoInfo)
+void CDummyVideoPlayer::GetVideoInfo(std::string& strVideoInfo)
 {
   strVideoInfo = "DummyVideoPlayer - nothing to see here";
 }
 
-void CDummyVideoPlayer::GetGeneralInfo(CStdString& strGeneralInfo)
+void CDummyVideoPlayer::GetGeneralInfo(std::string& strGeneralInfo)
 {
   strGeneralInfo = "DummyVideoPlayer - what are you still looking for?";
 }
@@ -255,12 +248,12 @@ void CDummyVideoPlayer::ShowOSD(bool bOnoff)
 {
 }
 
-CStdString CDummyVideoPlayer::GetPlayerState()
+std::string CDummyVideoPlayer::GetPlayerState()
 {
   return "";
 }
 
-bool CDummyVideoPlayer::SetPlayerState(CStdString state)
+bool CDummyVideoPlayer::SetPlayerState(const std::string& state)
 {
   return true;
 }
@@ -269,13 +262,13 @@ void CDummyVideoPlayer::Render()
 {
   const CRect vw = g_graphicsContext.GetViewWindow();
 #ifdef HAS_DX
-  D3DVIEWPORT9 newviewport;
-  D3DVIEWPORT9 oldviewport;
-  g_Windowing.Get3DDevice()->GetViewport(&oldviewport);
-  newviewport.MinZ = 0.0f;
-  newviewport.MaxZ = 1.0f;
-  newviewport.X = (DWORD)vw.x1;
-  newviewport.Y = (DWORD)vw.y1;
+  unsigned num = 1;
+  D3D11_VIEWPORT newviewport;
+  g_Windowing.Get3D11Context()->RSGetViewports(&num, &newviewport);
+  newviewport.MinDepth = 0.0f;
+  newviewport.MaxDepth = 1.0f;
+  newviewport.TopLeftX = (DWORD)vw.x1;
+  newviewport.TopLeftY = (DWORD)vw.y1;
   newviewport.Width = (DWORD)vw.Width();
   newviewport.Height = (DWORD)vw.Height();
   g_graphicsContext.SetClipRegion(vw.x1, vw.y1, vw.Width(), vw.Height());
@@ -290,7 +283,7 @@ void CDummyVideoPlayer::Render()
     int mins = (int)(m_clock / 60000);
     int secs = (int)((m_clock / 1000) % 60);
     int ms = (int)(m_clock % 1000);
-    CStdString currentTime = StringUtils::Format("Video goes here %02i:%02i:%03i", mins, secs, ms);
+    std::string currentTime = StringUtils::Format("Video goes here %02i:%02i:%03i", mins, secs, ms);
     float posX = (vw.x1 + vw.x2) * 0.5f;
     float posY = (vw.y1 + vw.y2) * 0.5f;
     CGUITextLayout::DrawText(font, posX, posY, 0xffffffff, 0, currentTime, XBFONT_CENTER_X | XBFONT_CENTER_Y);

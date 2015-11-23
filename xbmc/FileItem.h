@@ -24,18 +24,18 @@
  *
  */
 
+#include <memory>
+#include <utility>
+#include <vector>
+
 #include "guilib/GUIListItem.h"
-#include "utils/Archive.h"
-#include "utils/ISerializable.h"
-#include "utils/ISortable.h"
-#include "XBDateTime.h"
-#include "utils/SortUtils.h"
-#include "utils/LabelFormatter.h"
 #include "GUIPassword.h"
 #include "threads/CriticalSection.h"
-
-#include <vector>
-#include "boost/shared_ptr.hpp"
+#include "utils/IArchivable.h"
+#include "utils/ISerializable.h"
+#include "utils/ISortable.h"
+#include "utils/SortUtils.h"
+#include "XBDateTime.h"
 
 namespace MUSIC_INFO
 {
@@ -45,12 +45,18 @@ class CVideoInfoTag;
 namespace EPG
 {
   class CEpgInfoTag;
+  typedef std::shared_ptr<EPG::CEpgInfoTag> CEpgInfoTagPtr;
 }
 namespace PVR
 {
   class CPVRChannel;
   class CPVRRecording;
   class CPVRTimerInfoTag;
+  class CPVRRadioRDSInfoTag;
+  typedef std::shared_ptr<PVR::CPVRRecording> CPVRRecordingPtr;
+  typedef std::shared_ptr<PVR::CPVRChannel> CPVRChannelPtr;
+  typedef std::shared_ptr<PVR::CPVRTimerInfoTag> CPVRTimerInfoTagPtr;
+  typedef std::shared_ptr<PVR::CPVRRadioRDSInfoTag> CPVRRadioRDSInfoTagPtr;
 }
 class CPictureInfoTag;
 
@@ -60,6 +66,11 @@ class CSong;
 class CGenre;
 
 class CURL;
+class CVariant;
+
+class CFileItemList;
+class CCueDocument;
+typedef std::shared_ptr<CCueDocument> CCueDocumentPtr;
 
 /* special startoffset used to indicate that we wish to resume */
 #define STARTOFFSET_RESUME (-1)
@@ -90,25 +101,37 @@ public:
   CFileItem(void);
   CFileItem(const CFileItem& item);
   CFileItem(const CGUIListItem& item);
-  CFileItem(const CStdString& strLabel);
-  CFileItem(const CStdString& strPath, bool bIsFolder);
+  explicit CFileItem(const std::string& strLabel);
+  explicit CFileItem(const char* strLabel);
+  CFileItem(const CURL& path, bool bIsFolder);
+  CFileItem(const std::string& strPath, bool bIsFolder);
   CFileItem(const CSong& song);
-  CFileItem(const CStdString &path, const CAlbum& album);
+  CFileItem(const CSong& song, const MUSIC_INFO::CMusicInfoTag& music);
+  CFileItem(const CURL &path, const CAlbum& album);
+  CFileItem(const std::string &path, const CAlbum& album);
   CFileItem(const CArtist& artist);
   CFileItem(const CGenre& genre);
   CFileItem(const MUSIC_INFO::CMusicInfoTag& music);
   CFileItem(const CVideoInfoTag& movie);
-  CFileItem(const EPG::CEpgInfoTag& tag);
-  CFileItem(const PVR::CPVRChannel& channel);
-  CFileItem(const PVR::CPVRRecording& record);
-  CFileItem(const PVR::CPVRTimerInfoTag& timer);
+  CFileItem(const EPG::CEpgInfoTagPtr& tag);
+  CFileItem(const PVR::CPVRChannelPtr& channel);
+  CFileItem(const PVR::CPVRRecordingPtr& record);
+  CFileItem(const PVR::CPVRTimerInfoTagPtr& timer);
   CFileItem(const CMediaSource& share);
   virtual ~CFileItem(void);
   virtual CGUIListItem *Clone() const { return new CFileItem(*this); };
 
-  const CStdString &GetPath() const { return m_strPath; };
-  void SetPath(const CStdString &path) { m_strPath = path; };
+  const CURL GetURL() const;
+  void SetURL(const CURL& url);
+  bool IsURL(const CURL& url) const;
+  const std::string &GetPath() const { return m_strPath; };
+  void SetPath(const std::string &path) { m_strPath = path; };
+  bool IsPath(const std::string& path) const;
 
+  /*! \brief reset class to it's default values as per construction.
+   Free's all allocated memory.
+   \sa Initialize
+   */
   void Reset();
   const CFileItem& operator=(const CFileItem& item);
   virtual void Archive(CArchive& ar);
@@ -143,6 +166,7 @@ public:
    */
   bool IsPicture() const;
   bool IsLyrics() const;
+  bool IsSubtitle() const;
 
   /*!
    \brief Check whether an item is an audio item. Note that this returns true for
@@ -151,7 +175,6 @@ public:
    */
   bool IsAudio() const;
 
-  bool IsKaraoke() const;
   bool IsCUESheet() const;
   bool IsInternetStream(const bool bStrictCheck = false) const;
   bool IsPlayList() const;
@@ -163,7 +186,7 @@ public:
   bool IsAddonsPath() const;
   bool IsSourcesPath() const;
   bool IsNFO() const;
-  bool IsDVDImage() const;
+  bool IsDiscImage() const;
   bool IsOpticalMediaFile() const;
   bool IsDVDFile(bool bVobs = true, bool bIfos = true) const;
   bool IsBDFile() const;
@@ -179,11 +202,9 @@ public:
   bool IsOnLAN() const;
   bool IsHD() const;
   bool IsNfs() const;  
-  bool IsAfp() const;    
   bool IsRemote() const;
   bool IsSmb() const;
   bool IsURL() const;
-  bool IsDAAP() const;
   bool IsStack() const;
   bool IsMultiPath() const;
   bool IsMusicDb() const;
@@ -191,7 +212,10 @@ public:
   bool IsEPG() const;
   bool IsPVRChannel() const;
   bool IsPVRRecording() const;
+  bool IsUsablePVRRecording() const;
+  bool IsDeletedPVRRecording() const;
   bool IsPVRTimer() const;
+  bool IsPVRRadioRDS() const;
   bool IsType(const char *ext) const;
   bool IsVirtualDirectoryRoot() const;
   bool IsReadOnly() const;
@@ -200,11 +224,6 @@ public:
   bool IsParentFolder() const;
   bool IsFileFolder(EFileFolderType types = EFILEFOLDER_MASK_ALL) const;
   bool IsRemovable() const;
-  bool IsTuxBox() const;
-  bool IsMythTV() const;
-  bool IsHDHomeRun() const;
-  bool IsSlingbox() const;
-  bool IsVTP() const;
   bool IsPVR() const;
   bool IsLiveTV() const;
   bool IsRSS() const;
@@ -214,8 +233,7 @@ public:
   void CleanString();
   void FillInDefaultIcon();
   void SetFileSizeLabel();
-  virtual void SetLabel(const CStdString &strLabel);
-  CURL GetAsUrl() const;
+  virtual void SetLabel(const std::string &strLabel);
   int GetVideoContentType() const; /* return VIDEODB_CONTENT_TYPE, but don't want to include videodb in this header */
   bool IsLabelPreformated() const { return m_bLabelPreformated; }
   void SetLabelPreformated(bool bYesNo) { m_bLabelPreformated=bYesNo; }
@@ -249,36 +267,35 @@ public:
 
   inline bool HasEPGInfoTag() const
   {
-    return m_epgInfoTag != NULL;
+    return m_epgInfoTag.get() != NULL;
   }
 
-  EPG::CEpgInfoTag* GetEPGInfoTag();
-
-  inline const EPG::CEpgInfoTag* GetEPGInfoTag() const
+  inline const EPG::CEpgInfoTagPtr GetEPGInfoTag() const
   {
     return m_epgInfoTag;
   }
 
-  inline bool HasPVRChannelInfoTag() const
+  inline void SetEPGInfoTag(const EPG::CEpgInfoTagPtr& tag)
   {
-    return m_pvrChannelInfoTag != NULL;
+    m_epgInfoTag = tag;
   }
 
-  PVR::CPVRChannel* GetPVRChannelInfoTag();
+  inline bool HasPVRChannelInfoTag() const
+  {
+    return m_pvrChannelInfoTag.get() != NULL;
+  }
 
-  inline const PVR::CPVRChannel* GetPVRChannelInfoTag() const
+  inline const PVR::CPVRChannelPtr GetPVRChannelInfoTag() const
   {
     return m_pvrChannelInfoTag;
   }
 
   inline bool HasPVRRecordingInfoTag() const
   {
-    return m_pvrRecordingInfoTag != NULL;
+    return m_pvrRecordingInfoTag.get() != NULL;
   }
 
-  PVR::CPVRRecording* GetPVRRecordingInfoTag();
-
-  inline const PVR::CPVRRecording* GetPVRRecordingInfoTag() const
+  inline const PVR::CPVRRecordingPtr GetPVRRecordingInfoTag() const
   {
     return m_pvrRecordingInfoTag;
   }
@@ -288,12 +305,37 @@ public:
     return m_pvrTimerInfoTag != NULL;
   }
 
-  PVR::CPVRTimerInfoTag* GetPVRTimerInfoTag();
-
-  inline const PVR::CPVRTimerInfoTag* GetPVRTimerInfoTag() const
+  inline const PVR::CPVRTimerInfoTagPtr GetPVRTimerInfoTag() const
   {
     return m_pvrTimerInfoTag;
   }
+
+  inline bool HasPVRRadioRDSInfoTag() const
+  {
+    return m_pvrRadioRDSInfoTag.get() != NULL;
+  }
+
+  inline const PVR::CPVRRadioRDSInfoTagPtr GetPVRRadioRDSInfoTag() const
+  {
+    return m_pvrRadioRDSInfoTag;
+  }
+
+  inline void SetPVRRadioRDSInfoTag(const PVR::CPVRRadioRDSInfoTagPtr& tag)
+  {
+    m_pvrRadioRDSInfoTag = tag;
+  }
+
+  /*!
+   \brief Test if this item has a valid resume point set.
+   \return True if this item has a resume point and it is set, false otherwise.
+   */
+  bool IsResumePointSet() const;
+
+  /*!
+   \brief Return the current resume time.
+   \return The time in seconds from the start to resume playing from.
+   */
+  double GetCurrentResumeTime() const;
 
   inline bool HasPictureInfoTag() const
   {
@@ -312,7 +354,7 @@ public:
    \return path to the local fanart for this item, or empty if none exists
    \sa GetFolderThumb, GetTBNFile
    */
-  CStdString GetLocalFanart() const;
+  std::string GetLocalFanart() const;
 
   /*! \brief Assemble the filename of a particular piece of local artwork for an item.
              No file existence check is typically performed.
@@ -321,7 +363,7 @@ public:
    \return the path to the local artwork.
    \sa FindLocalArt
    */
-  CStdString GetLocalArt(const std::string &artFile, bool useFolder = false) const;
+  std::string GetLocalArt(const std::string &artFile, bool useFolder = false) const;
 
   /*! \brief Assemble the filename of a particular piece of local artwork for an item,
              and check for file existence.
@@ -330,7 +372,7 @@ public:
    \return the path to the local artwork if it exists, empty otherwise.
    \sa GetLocalArt
    */
-  CStdString FindLocalArt(const std::string &artFile, bool useFolder) const;
+  std::string FindLocalArt(const std::string &artFile, bool useFolder) const;
 
   /*! \brief Whether or not to skip searching for local art.
    \return true if local art should be skipped for this item, false otherwise.
@@ -339,11 +381,11 @@ public:
   bool SkipLocalArt() const;
 
   // Gets the .tbn file associated with this item
-  CStdString GetTBNFile() const;
+  std::string GetTBNFile() const;
   // Gets the folder image associated with this item (defaults to folder.jpg)
-  CStdString GetFolderThumb(const CStdString &folderJPG = "folder.jpg") const;
+  std::string GetFolderThumb(const std::string &folderJPG = "folder.jpg") const;
   // Gets the correct movie title
-  CStdString GetMovieName(bool bUseFolderNames = false) const;
+  std::string GetMovieName(bool bUseFolderNames = false) const;
 
   /*! \brief Find the base movie path (i.e. the item the user expects us to use to lookup the movie)
    For folder items, with "use foldernames for lookups" it returns the folder.
@@ -352,10 +394,10 @@ public:
    \param useFolderNames whether we're using foldernames for lookups
    \return the base movie folder
    */
-  CStdString GetBaseMoviePath(bool useFolderNames) const;
+  std::string GetBaseMoviePath(bool useFolderNames) const;
 
   // Gets the user thumb, if it exists
-  CStdString GetUserMusicThumb(bool alwaysCheckRemote = false, bool fallbackToFolder = false) const;
+  std::string GetUserMusicThumb(bool alwaysCheckRemote = false, bool fallbackToFolder = false) const;
 
   /*! \brief Get the path where we expect local metadata to reside.
    For a folder, this is just the existing path (eg tvshow folder)
@@ -369,18 +411,18 @@ public:
 
      \sa URIUtils::GetParentPath
    */
-  CStdString GetLocalMetadataPath() const;
+  std::string GetLocalMetadataPath() const;
 
   // finds a matching local trailer file
-  CStdString FindTrailer() const;
+  std::string FindTrailer() const;
 
   virtual bool LoadMusicTag();
 
   /* Returns the content type of this item if known */
-  const CStdString& GetMimeType() const { return m_mimetype; }
+  const std::string& GetMimeType() const { return m_mimetype; }
 
   /* sets the mime-type if known beforehand */
-  void SetMimeType(const CStdString& mimetype) { m_mimetype = mimetype; } ;
+  void SetMimeType(const std::string& mimetype) { m_mimetype = mimetype; } ;
 
   /*! \brief Resolve the MIME type based on file extension or a web lookup
    If m_mimetype is already set (non-empty), this function has no effect. For
@@ -389,9 +431,21 @@ public:
    */
   void FillInMimeType(bool lookup = true);
 
+  /*!
+   \brief Some sources do not support HTTP HEAD request to determine i.e. mime type
+   \return false if HEAD requests have to be avoided
+   */
+  bool ContentLookup() { return m_doContentLookup; };
+
+  /*! 
+   *\brief Lookup via HTTP HEAD request might not be needed, use this setter to
+   * disable ContentLookup.
+   */
+  void SetContentLookup(bool enable) { m_doContentLookup = enable; };
+
   /* general extra info about the contents of the item, not for display */
-  void SetExtraInfo(const CStdString& info) { m_extrainfo = info; };
-  const CStdString& GetExtraInfo() const { return m_extrainfo; };
+  void SetExtraInfo(const std::string& info) { m_extrainfo = info; };
+  const std::string& GetExtraInfo() const { return m_extrainfo; };
 
   /*! \brief Update an item with information from another item
    We take metadata information from the given item and supplement the current item
@@ -429,42 +483,56 @@ public:
   int m_iDriveType;     ///< If \e m_bIsShareOrDrive is \e true, use to get the share type. Types see: CMediaSource::m_iDriveType
   CDateTime m_dateTime;             ///< file creation date & time
   int64_t m_dwSize;             ///< file size (0 for folders)
-  CStdString m_strDVDLabel;
-  CStdString m_strTitle;
+  std::string m_strDVDLabel;
+  std::string m_strTitle;
   int m_iprogramCount;
   int m_idepth;
   int m_lStartOffset;
   int m_lStartPartNumber;
   int m_lEndOffset;
   LockType m_iLockMode;
-  CStdString m_strLockCode;
+  std::string m_strLockCode;
   int m_iHasLock; // 0 - no lock 1 - lock, but unlocked 2 - locked
   int m_iBadPwdCount;
 
+  void SetCueDocument(const CCueDocumentPtr& cuePtr);
+  void LoadEmbeddedCue();
+  bool HasCueDocument() const;
+  bool LoadTracksFromCueDocument(CFileItemList& scannedItems);
 private:
-  CStdString m_strPath;            ///< complete path to item
+  /*! \brief initialize all members of this class (not CGUIListItem members) to default values.
+   Called from constructors, and from Reset()
+   \sa Reset, CGUIListItem
+   */
+  void Initialize();
+
+  std::string m_strPath;            ///< complete path to item
 
   SortSpecial m_specialSort;
   bool m_bIsParentFolder;
   bool m_bCanQueue;
   bool m_bLabelPreformated;
-  CStdString m_mimetype;
-  CStdString m_extrainfo;
+  std::string m_mimetype;
+  std::string m_extrainfo;
+  bool m_doContentLookup;
   MUSIC_INFO::CMusicInfoTag* m_musicInfoTag;
   CVideoInfoTag* m_videoInfoTag;
-  EPG::CEpgInfoTag* m_epgInfoTag;
-  PVR::CPVRChannel* m_pvrChannelInfoTag;
-  PVR::CPVRRecording* m_pvrRecordingInfoTag;
-  PVR::CPVRTimerInfoTag * m_pvrTimerInfoTag;
+  EPG::CEpgInfoTagPtr m_epgInfoTag;
+  PVR::CPVRChannelPtr m_pvrChannelInfoTag;
+  PVR::CPVRRecordingPtr m_pvrRecordingInfoTag;
+  PVR::CPVRTimerInfoTagPtr m_pvrTimerInfoTag;
+  PVR::CPVRRadioRDSInfoTagPtr m_pvrRadioRDSInfoTag;
   CPictureInfoTag* m_pictureInfoTag;
   bool m_bIsAlbum;
+
+  CCueDocumentPtr m_cueDocument;
 };
 
 /*!
   \brief A shared pointer to CFileItem
   \sa CFileItem
   */
-typedef boost::shared_ptr<CFileItem> CFileItemPtr;
+typedef std::shared_ptr<CFileItem> CFileItemPtr;
 
 /*!
   \brief A vector of pointer to CFileItem
@@ -482,19 +550,19 @@ typedef std::vector< CFileItemPtr >::iterator IVECFILEITEMS;
   \brief A map of pointers to CFileItem
   \sa CFileItem
   */
-typedef std::map<CStdString, CFileItemPtr > MAPFILEITEMS;
+typedef std::map<std::string, CFileItemPtr > MAPFILEITEMS;
 
 /*!
   \brief Iterator for MAPFILEITEMS
   \sa MAPFILEITEMS
   */
-typedef std::map<CStdString, CFileItemPtr >::iterator IMAPFILEITEMS;
+typedef std::map<std::string, CFileItemPtr >::iterator IMAPFILEITEMS;
 
 /*!
   \brief Pair for MAPFILEITEMS
   \sa MAPFILEITEMS
   */
-typedef std::pair<CStdString, CFileItemPtr > MAPFILEITEMSPAIR;
+typedef std::pair<std::string, CFileItemPtr > MAPFILEITEMSPAIR;
 
 typedef bool (*FILEITEMLISTCOMPARISONFUNC) (const CFileItemPtr &pItem1, const CFileItemPtr &pItem2);
 typedef void (*FILEITEMFILLFUNC) (CFileItemPtr &item);
@@ -509,13 +577,13 @@ public:
   enum CACHE_TYPE { CACHE_NEVER = 0, CACHE_IF_SLOW, CACHE_ALWAYS };
 
   CFileItemList();
-  CFileItemList(const CStdString& strPath);
+  explicit CFileItemList(const std::string& strPath);
   virtual ~CFileItemList();
   virtual void Archive(CArchive& ar);
   CFileItemPtr operator[] (int iItem);
   const CFileItemPtr operator[] (int iItem) const;
-  CFileItemPtr operator[] (const CStdString& strPath);
-  const CFileItemPtr operator[] (const CStdString& strPath) const;
+  CFileItemPtr operator[] (const std::string& strPath);
+  const CFileItemPtr operator[] (const std::string& strPath) const;
   void Clear();
   void ClearItems();
   void Add(const CFileItemPtr &pItem);
@@ -525,8 +593,8 @@ public:
   CFileItemPtr Get(int iItem);
   const CFileItemPtr Get(int iItem) const;
   const VECFILEITEMS GetList() const { return m_items; }
-  CFileItemPtr Get(const CStdString& strPath);
-  const CFileItemPtr Get(const CStdString& strPath) const;
+  CFileItemPtr Get(const std::string& strPath);
+  const CFileItemPtr Get(const std::string& strPath) const;
   int Size() const;
   bool IsEmpty() const;
   void Append(const CFileItemList& itemlist);
@@ -551,7 +619,7 @@ public:
   void FilterCueItems();
   void RemoveExtensions();
   void SetFastLookup(bool fastLookup);
-  bool Contains(const CStdString& fileName) const;
+  bool Contains(const std::string& fileName) const;
   bool GetFastLookup() const { return m_fastLookup; };
 
   /*! \brief stack a CFileItemList
@@ -612,8 +680,8 @@ public:
   void AddSortMethod(SortBy sortBy, int buttonLabel, const LABEL_MASKS &labelMasks, SortAttribute sortAttributes = SortAttributeNone);
   void AddSortMethod(SortBy sortBy, SortAttribute sortAttributes, int buttonLabel, const LABEL_MASKS &labelMasks);
   void AddSortMethod(SortDescription sortDescription, int buttonLabel, const LABEL_MASKS &labelMasks);
-  bool HasSortDetails() const { return m_sortDetails.size() != 0; };
-  const std::vector<SORT_METHOD_DETAILS> &GetSortDetails() const { return m_sortDetails; };
+  bool HasSortDetails() const { return m_sortDetails.size() != 0; }
+  const std::vector<GUIViewSortDetails> &GetSortDetails() const { return m_sortDetails; }
 
   /*! \brief Specify whether this list should be sorted with folders separate from files
    By default we sort with folders listed (and sorted separately) except for those sort modes
@@ -624,14 +692,14 @@ public:
   void SetSortIgnoreFolders(bool sort) { m_sortIgnoreFolders = sort; };
   bool GetReplaceListing() const { return m_replaceListing; };
   void SetReplaceListing(bool replace);
-  void SetContent(const CStdString &content) { m_content = content; };
-  const CStdString &GetContent() const { return m_content; };
+  void SetContent(const std::string &content) { m_content = content; };
+  const std::string &GetContent() const { return m_content; };
 
   void ClearSortState();
 private:
   void Sort(FILEITEMLISTCOMPARISONFUNC func);
   void FillSortFields(FILEITEMFILLFUNC func);
-  CStdString GetDiscFileCache(int windowID) const;
+  std::string GetDiscFileCache(int windowID) const;
 
   /*!
    \brief stack files in a CFileItemList
@@ -652,9 +720,9 @@ private:
   bool m_sortIgnoreFolders;
   CACHE_TYPE m_cacheToDisc;
   bool m_replaceListing;
-  CStdString m_content;
+  std::string m_content;
 
-  std::vector<SORT_METHOD_DETAILS> m_sortDetails;
+  std::vector<GUIViewSortDetails> m_sortDetails;
 
   CCriticalSection m_lock;
 };

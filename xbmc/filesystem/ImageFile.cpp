@@ -19,12 +19,10 @@
  */
 
 #include "ImageFile.h"
-#include "utils/URIUtils.h"
 #include "URL.h"
 #include "TextureCache.h"
 
 using namespace XFILE;
-using namespace std;
 
 CImageFile::CImageFile(void)
 {
@@ -37,12 +35,12 @@ CImageFile::~CImageFile(void)
 
 bool CImageFile::Open(const CURL& url)
 {
-  CStdString file = url.Get();
+  std::string file = url.Get();
   bool needsRecaching = false;
-  CStdString cachedFile = CTextureCache::Get().CheckCachedImage(file, false, needsRecaching);
+  std::string cachedFile = CTextureCache::GetInstance().CheckCachedImage(file, false, needsRecaching);
   if (cachedFile.empty())
   { // not in the cache, so cache it
-    cachedFile = CTextureCache::Get().CacheImage(file);
+    cachedFile = CTextureCache::GetInstance().CacheImage(file);
   }
   if (!cachedFile.empty())
   { // in the cache, return what we have
@@ -55,9 +53,9 @@ bool CImageFile::Open(const CURL& url)
 bool CImageFile::Exists(const CURL& url)
 {
   bool needsRecaching = false;
-  CStdString cachedFile = CTextureCache::Get().CheckCachedImage(url.Get(), false, needsRecaching);
+  std::string cachedFile = CTextureCache::GetInstance().CheckCachedImage(url.Get(), false, needsRecaching);
   if (!cachedFile.empty())
-    return CFile::Exists(cachedFile);
+    return CFile::Exists(cachedFile, false);
 
   // need to check if the original can be cached on demand and that the file exists 
   if (!CTextureCache::CanCacheImageURL(url))
@@ -69,7 +67,7 @@ bool CImageFile::Exists(const CURL& url)
 int CImageFile::Stat(const CURL& url, struct __stat64* buffer)
 {
   bool needsRecaching = false;
-  CStdString cachedFile = CTextureCache::Get().CheckCachedImage(url.Get(), false, needsRecaching);
+  std::string cachedFile = CTextureCache::GetInstance().CheckCachedImage(url.Get(), false, needsRecaching);
   if (!cachedFile.empty())
     return CFile::Stat(cachedFile, buffer);
 
@@ -85,7 +83,7 @@ int CImageFile::Stat(const CURL& url, struct __stat64* buffer)
   return -1;
 }
 
-unsigned int CImageFile::Read(void* lpBuf, int64_t uiBufSize)
+ssize_t CImageFile::Read(void* lpBuf, size_t uiBufSize)
 {
   return m_file.Read(lpBuf, uiBufSize);
 }

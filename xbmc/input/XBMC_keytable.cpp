@@ -19,7 +19,6 @@
  */
 
 #include "system.h"
-#include "utils/StdString.h"
 #include "utils/StringUtils.h"
 #include "input/XBMC_keysym.h"
 #include "input/XBMC_vkeys.h"
@@ -174,12 +173,20 @@ static const XBMCKEYTABLE XBMCKeyTable[] =
 , { XBMCK_MEDIA_PREV_TRACK,       0,    0, XBMCVK_MEDIA_PREV_TRACK,    "prev_track" }
 , { XBMCK_MEDIA_STOP,             0,    0, XBMCVK_MEDIA_STOP,          "stop" }
 , { XBMCK_MEDIA_PLAY_PAUSE,       0,    0, XBMCVK_MEDIA_PLAY_PAUSE,    "play_pause" }
+, { XBMCK_MEDIA_REWIND,           0,    0, XBMCVK_MEDIA_REWIND,        "rewind" }
+, { XBMCK_MEDIA_FASTFORWARD,      0,    0, XBMCVK_MEDIA_FASTFORWARD,   "fastforward" }
 , { XBMCK_LAUNCH_MAIL,            0,    0, XBMCVK_LAUNCH_MAIL,         "launch_mail" }
 , { XBMCK_LAUNCH_MEDIA_SELECT,    0,    0, XBMCVK_LAUNCH_MEDIA_SELECT, "launch_media_select" }
 , { XBMCK_LAUNCH_APP1,            0,    0, XBMCVK_LAUNCH_APP1,         "launch_app1_pc_icon" }
 , { XBMCK_LAUNCH_APP2,            0,    0, XBMCVK_LAUNCH_APP2,         "launch_app2_pc_icon" }
 , { XBMCK_LAUNCH_FILE_BROWSER,    0,    0, XBMCVK_LAUNCH_FILE_BROWSER, "launch_file_browser" }
 , { XBMCK_LAUNCH_MEDIA_CENTER,    0,    0, XBMCVK_LAUNCH_MEDIA_CENTER, "launch_media_center" }
+, { XBMCK_PLAY,                   0,    0, XBMCVK_MEDIA_PLAY_PAUSE,    "play_pause" }
+, { XBMCK_STOP,                   0,    0, XBMCVK_MEDIA_STOP,          "stop" }
+, { XBMCK_REWIND,                 0,    0, XBMCVK_MEDIA_REWIND,        "rewind" }
+, { XBMCK_FASTFORWARD,            0,    0, XBMCVK_MEDIA_FASTFORWARD,   "fastforward" }
+, { XBMCK_RECORD,                 0,    0, XBMCVK_MEDIA_RECORD,        "record" }
+
 
 // Function keys
 , { XBMCK_F1,                     0,    0, XBMCVK_F1,            "f1"}
@@ -224,6 +231,18 @@ static const XBMCKEYTABLE XBMCKeyTable[] =
 , { XBMCK_PRINT,                  0,    0, XBMCVK_PRINTSCREEN,   "printscreen" }
 , { XBMCK_POWER,                  0,    0, XBMCVK_POWER,         "power" }
 , { XBMCK_SLEEP,                  0,    0, XBMCVK_SLEEP,         "sleep" }
+, { XBMCK_GUIDE,                  0,    0, XBMCVK_GUIDE,         "guide" }
+, { XBMCK_SETTINGS,               0,    0, XBMCVK_SETTINGS,      "settings" }
+, { XBMCK_INFO,                   0,    0, XBMCVK_INFO,          "info" }
+, { XBMCK_RED,                    0,    0, XBMCVK_RED,           "red" }
+, { XBMCK_GREEN,                  0,    0, XBMCVK_GREEN,         "green" }
+, { XBMCK_YELLOW,                 0,    0, XBMCVK_YELLOW,        "yellow" }
+, { XBMCK_BLUE,                   0,    0, XBMCVK_BLUE,          "blue" }
+, { XBMCK_ZOOM,                   0,    0, XBMCVK_ZOOM,          "zoom" }
+, { XBMCK_TEXT,                   0,    0, XBMCVK_TEXT,          "text" }
+, { XBMCK_FAVORITES,              0,    0, XBMCVK_FAVORITES,     "favorites" }
+, { XBMCK_HOMEPAGE ,              0,    0, XBMCVK_HOMEPAGE,      "homepage" }
+, { XBMCK_CONFIG,                 0,    0, XBMCVK_CONFIG,        "config" }
 };
 
 static int XBMCKeyTableSize = sizeof(XBMCKeyTable)/sizeof(XBMCKEYTABLE);
@@ -237,7 +256,7 @@ bool KeyTableLookupName(const char* keyname, XBMCKEYTABLE* keytable)
     return false;
 
   // We need the button name to be in lowercase
-  CStdString lkeyname = keyname;
+  std::string lkeyname = keyname;
   StringUtils::ToLower(lkeyname);
 
   // Look up the key name in XBMCKeyTable

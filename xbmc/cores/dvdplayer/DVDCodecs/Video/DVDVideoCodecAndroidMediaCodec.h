@@ -22,16 +22,19 @@
 
 #include <queue>
 #include <vector>
-#include <boost/shared_ptr.hpp>
+#include <memory>
 
 #include "DVDVideoCodec.h"
 #include "DVDStreamInfo.h"
 #include "threads/Thread.h"
 #include "threads/SingleLock.h"
+#include "android/jni/Surface.h"
+#include "guilib/Geometry.h"
 
 class CJNISurface;
 class CJNISurfaceTexture;
 class CJNIMediaCodec;
+class CJNIMediaFormat;
 class CDVDMediaCodecOnFrameAvailable;
 class CJNIByteBuffer;
 class CBitstreamConverter;
@@ -48,9 +51,9 @@ class CDVDMediaCodecInfo
 public:
   CDVDMediaCodecInfo( int index,
                       unsigned int texture,
-                      boost::shared_ptr<CJNIMediaCodec> &codec,
-                      boost::shared_ptr<CJNISurfaceTexture> &surfacetexture,
-                      boost::shared_ptr<CDVDMediaCodecOnFrameAvailable> &frameready);
+                      std::shared_ptr<CJNIMediaCodec> &codec,
+                      std::shared_ptr<CJNISurfaceTexture> &surfacetexture,
+                      std::shared_ptr<CDVDMediaCodecOnFrameAvailable> &frameready);
 
   // reference counting
   CDVDMediaCodecInfo* Retain();
@@ -65,6 +68,7 @@ public:
   int                 GetTextureID() const;
   void                GetTransformMatrix(float *textureMatrix);
   void                UpdateTexImage();
+  void                RenderUpdate(const CRect &SrcRect, const CRect &DestRect);
 
 private:
   // private because we are reference counted
@@ -72,21 +76,22 @@ private:
 
   long                m_refs;
   bool                m_valid;
+  bool                m_isReleased;
   int                 m_index;
   unsigned int        m_texture;
   int64_t             m_timestamp;
   CCriticalSection    m_section;
   // shared_ptr bits, shared between
   // CDVDVideoCodecAndroidMediaCodec and LinuxRenderGLES.
-  boost::shared_ptr<CJNIMediaCodec> m_codec;
-  boost::shared_ptr<CJNISurfaceTexture> m_surfacetexture;
-  boost::shared_ptr<CDVDMediaCodecOnFrameAvailable> m_frameready;
+  std::shared_ptr<CJNIMediaCodec> m_codec;
+  std::shared_ptr<CJNISurfaceTexture> m_surfacetexture;
+  std::shared_ptr<CDVDMediaCodecOnFrameAvailable> m_frameready;
 };
 
 class CDVDVideoCodecAndroidMediaCodec : public CDVDVideoCodec
 {
 public:
-  CDVDVideoCodecAndroidMediaCodec();
+  CDVDVideoCodecAndroidMediaCodec(bool surface_render = false);
   virtual ~CDVDVideoCodecAndroidMediaCodec();
 
   // required overrides
@@ -99,14 +104,14 @@ public:
   virtual void    SetDropState(bool bDrop);
   virtual int     GetDataSize(void);
   virtual double  GetTimeSize(void);
-  virtual const char* GetName(void) { return m_formatname; }
+  virtual const char* GetName(void) { return m_formatname.c_str(); }
   virtual unsigned GetAllowedReferences();
 
 protected:
   void            FlushInternal(void);
   bool            ConfigureMediaCodec(void);
   int             GetOutputPicture(void);
-  void            OutputFormatChanged(void);
+  void            ConfigureOutputFormat(CJNIMediaFormat* mediaformat);
 
   // surface handling functions
   static void     CallbackInitSurfaceTexture(void*);
@@ -116,20 +121,22 @@ protected:
   CDVDStreamInfo  m_hints;
   std::string     m_mime;
   std::string     m_codecname;
-  const char     *m_formatname;
+  int             m_colorFormat;
+  std::string     m_formatname;
   bool            m_opened;
   bool            m_drop;
 
   CJNISurface    *m_surface;
   unsigned int    m_textureId;
+  CJNISurface     m_videosurface;
   // we need these as shared_ptr because CDVDVideoCodecAndroidMediaCodec
   // will get deleted before CLinuxRendererGLES is shut down and
   // CLinuxRendererGLES refs them via CDVDMediaCodecInfo.
-  boost::shared_ptr<CJNIMediaCodec> m_codec;
-  boost::shared_ptr<CJNISurfaceTexture> m_surfaceTexture;
-  boost::shared_ptr<CDVDMediaCodecOnFrameAvailable> m_frameAvailable;
+  std::shared_ptr<CJNIMediaCodec> m_codec;
+  std::shared_ptr<CJNISurfaceTexture> m_surfaceTexture;
+  std::shared_ptr<CDVDMediaCodecOnFrameAvailable> m_frameAvailable;
 
-  std::queue<amc_demux> m_demux;
+  amc_demux m_demux_pkt;
   std::vector<CJNIByteBuffer> m_input;
   std::vector<CJNIByteBuffer> m_output;
   std::vector<CDVDMediaCodecInfo*> m_inflight;
@@ -138,6 +145,7 @@ protected:
   DVDVideoPicture m_videobuffer;
 
   bool            m_render_sw;
+  bool            m_render_surface;
   int             m_src_offset[4];
   int             m_src_stride[4];
 };

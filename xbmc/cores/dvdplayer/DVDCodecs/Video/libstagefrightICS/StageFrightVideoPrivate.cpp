@@ -29,7 +29,7 @@
 #include <GLES2/gl2ext.h>
 #include "windowing/egl/EGLWrapper.h"
 #include "Application.h"
-#include "ApplicationMessenger.h"
+#include "messaging/ApplicationMessenger.h"
 #include "windowing/WindowingFactory.h"
 #include "settings/AdvancedSettings.h"
 #include "utils/log.h"
@@ -39,6 +39,8 @@
 #include "android/jni/SurfaceTexture.h"
 
 #define CLASSNAME "CStageFrightVideoPrivate"
+
+using namespace KODI::MESSAGING;
 
 GLint glerror;
 #define CheckEglError(x) while((glerror = eglGetError()) != EGL_SUCCESS) CLog::Log(LOGERROR, "EGL error in %s: %x",x, glerror);
@@ -58,6 +60,8 @@ int NP2( unsigned x ) {
   x |= x >> 16;
   return ++x;
 }
+
+using namespace android;
 
 CStageFrightVideoPrivate::CStageFrightVideoPrivate()
     : decode_thread(NULL), source(NULL)
@@ -224,7 +228,7 @@ void CStageFrightVideoPrivate::OES_shader_setUp()
   "uniform mat4 texMatrix;\n"
   "void main() {\n"
   "  vec2 vTexCoords = 0.5 * (vPosition.xy + vec2(1.0, 1.0));\n"
-  "  texCoords = (texMatrix * vec4(vTexCoords, 0.0, 1.0)).xy;\n"
+  "  texCoords = (texMatrix * vec4(vTexCoords.x, 1.0 - vTexCoords.y, 0.0, 1.0)).xy;\n"
   "  gl_Position = vPosition;\n"
   "}\n";
 

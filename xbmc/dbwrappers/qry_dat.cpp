@@ -41,19 +41,18 @@
 #pragma warning (disable:4715)
 #endif
 
-using namespace std;
-
 namespace dbiplus {
 
 //Constructors 
-field_value::field_value(){
-  str_value = "";
+field_value::field_value()
+{
   field_type = ft_String;
   is_null = false;
-  }
+}
 
-field_value::field_value(const char *s) {
-  str_value = s;
+field_value::field_value(const char *s):
+  str_value(s)
+{
   field_type = ft_String;
   is_null = false;
 }
@@ -168,8 +167,8 @@ field_value::~field_value(){
 
   
 //Conversations functions
-string field_value::get_asString() const {
-    string tmp;
+std::string field_value::get_asString() const {
+    std::string tmp;
     switch (field_type) {
     case ft_String: {
       tmp = str_value;
@@ -216,7 +215,7 @@ string field_value::get_asString() const {
     }
     case ft_Int64: {
       char t[23];
-      sprintf(t,"%"PRId64,int64_value);
+      sprintf(t,"%" PRId64,int64_value);
       return tmp = t;
     }
     default:
@@ -276,11 +275,10 @@ char field_value::get_asChar() const {
       return str_value[0];
     }
     case ft_Boolean:{
-      char c;
       if (bool_value) 
-	return c='T';
+	return 'T';
       else
-	return c='F';
+	return 'F';
     }
     case ft_Char: {
       return  char_value;
@@ -317,7 +315,7 @@ char field_value::get_asChar() const {
     }
     case ft_Int64: {
       char t[24];
-      sprintf(t,"%"PRId64,int64_value);
+      sprintf(t,"%" PRId64,int64_value);
       return t[0];
     }
     default:
@@ -655,7 +653,7 @@ void field_value::set_asString(const char *s) {
   str_value = s;
   field_type = ft_String;}
 
-void field_value::set_asString(const string & s) {
+void field_value::set_asString(const std::string & s) {
   str_value = s;
   field_type = ft_String;}
   
@@ -702,8 +700,8 @@ fType field_value::get_field_type() {
   return field_type;}
 
   
-string field_value::gft() {
-    string tmp;
+std::string field_value::gft() {
+    std::string tmp;
     switch (field_type) {
     case ft_String: {
       tmp.assign("string");

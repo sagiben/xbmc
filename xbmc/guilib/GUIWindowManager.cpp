@@ -1,6 +1,6 @@
 /*
- *      Copyright (C) 2005-2013 Team XBMC
- *      http://xbmc.org
+ *      Copyright (C) 2005-2015 Team XBMC
+ *      http://kodi.tv
  *
  *  This Program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -13,7 +13,7 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with XBMC; see the file COPYING.  If not, see
+ *  along with Kodi; see the file COPYING.  If not, see
  *  <http://www.gnu.org/licenses/>.
  *
  */
@@ -22,7 +22,8 @@
 #include "GUIAudioManager.h"
 #include "GUIDialog.h"
 #include "Application.h"
-#include "ApplicationMessenger.h"
+#include "messaging/ApplicationMessenger.h"
+#include "messaging/helpers/DialogHelper.h"
 #include "GUIPassword.h"
 #include "GUIInfoManager.h"
 #include "threads/SingleLock.h"
@@ -31,16 +32,123 @@
 #include "settings/Settings.h"
 #include "addons/Skin.h"
 #include "GUITexture.h"
-#include "windowing/WindowingFactory.h"
 #include "utils/Variant.h"
-#include "Key.h"
+#include "input/Key.h"
+#include "utils/StringUtils.h"
 
-using namespace std;
+#include "windows/GUIWindowHome.h"
+#include "events/windows/GUIWindowEventLog.h"
+#include "settings/windows/GUIWindowSettings.h"
+#include "windows/GUIWindowFileManager.h"
+#include "settings/windows/GUIWindowSettingsCategory.h"
+#include "music/windows/GUIWindowMusicPlaylist.h"
+#include "music/windows/GUIWindowMusicNav.h"
+#include "music/windows/GUIWindowMusicPlaylistEditor.h"
+#include "video/windows/GUIWindowVideoPlaylist.h"
+#include "music/dialogs/GUIDialogMusicInfo.h"
+#include "video/dialogs/GUIDialogVideoInfo.h"
+#include "video/windows/GUIWindowVideoNav.h"
+#include "profiles/windows/GUIWindowSettingsProfile.h"
+#ifdef HAS_GL
+#include "rendering/gl/GUIWindowTestPatternGL.h"
+#endif
+#ifdef HAS_DX
+#include "rendering/dx/GUIWindowTestPatternDX.h"
+#endif
+#include "settings/windows/GUIWindowSettingsScreenCalibration.h"
+#include "programs/GUIWindowPrograms.h"
+#include "pictures/GUIWindowPictures.h"
+#include "windows/GUIWindowWeather.h"
+#include "windows/GUIWindowLoginScreen.h"
+#include "addons/GUIWindowAddonBrowser.h"
+#include "music/windows/GUIWindowVisualisation.h"
+#include "windows/GUIWindowDebugInfo.h"
+#include "windows/GUIWindowPointer.h"
+#include "windows/GUIWindowSystemInfo.h"
+#include "windows/GUIWindowScreensaver.h"
+#include "windows/GUIWindowScreensaverDim.h"
+#include "pictures/GUIWindowSlideShow.h"
+#include "windows/GUIWindowSplash.h"
+#include "windows/GUIWindowStartup.h"
+#include "video/windows/GUIWindowFullScreen.h"
+#include "video/dialogs/GUIDialogVideoOSD.h"
+
+
+// Dialog includes
+#include "music/dialogs/GUIDialogMusicOSD.h"
+#include "music/dialogs/GUIDialogVisualisationPresetList.h"
+#include "dialogs/GUIDialogTextViewer.h"
+#include "network/GUIDialogNetworkSetup.h"
+#include "dialogs/GUIDialogMediaSource.h"
+#include "video/dialogs/GUIDialogVideoSettings.h"
+#include "video/dialogs/GUIDialogAudioSubtitleSettings.h"
+#include "video/dialogs/GUIDialogVideoBookmarks.h"
+#include "profiles/dialogs/GUIDialogProfileSettings.h"
+#include "profiles/dialogs/GUIDialogLockSettings.h"
+#include "settings/dialogs/GUIDialogContentSettings.h"
+#include "dialogs/GUIDialogBusy.h"
+#include "dialogs/GUIDialogKeyboardGeneric.h"
+#include "dialogs/GUIDialogYesNo.h"
+#include "dialogs/GUIDialogOK.h"
+#include "dialogs/GUIDialogProgress.h"
+#include "dialogs/GUIDialogExtendedProgressBar.h"
+#include "dialogs/GUIDialogSelect.h"
+#include "dialogs/GUIDialogSeekBar.h"
+#include "dialogs/GUIDialogKaiToast.h"
+#include "dialogs/GUIDialogVolumeBar.h"
+#include "dialogs/GUIDialogMuteBug.h"
+#include "dialogs/GUIDialogNumeric.h"
+#include "dialogs/GUIDialogGamepad.h"
+#include "dialogs/GUIDialogSubMenu.h"
+#include "dialogs/GUIDialogFavourites.h"
+#include "dialogs/GUIDialogButtonMenu.h"
+#include "dialogs/GUIDialogContextMenu.h"
+#include "dialogs/GUIDialogPlayerControls.h"
+#include "music/dialogs/GUIDialogSongInfo.h"
+#include "dialogs/GUIDialogSmartPlaylistEditor.h"
+#include "dialogs/GUIDialogSmartPlaylistRule.h"
+#include "pictures/GUIDialogPictureInfo.h"
+#include "addons/GUIDialogAddonSettings.h"
+#include "addons/GUIDialogAddonInfo.h"
+#ifdef HAS_LINUX_NETWORK
+#include "network/GUIDialogAccessPoints.h"
+#endif
+
+/* PVR related include Files */
+#include "pvr/PVRManager.h"
+#include "pvr/windows/GUIWindowPVRChannels.h"
+#include "pvr/windows/GUIWindowPVRRecordings.h"
+#include "pvr/windows/GUIWindowPVRGuide.h"
+#include "pvr/windows/GUIWindowPVRTimers.h"
+#include "pvr/windows/GUIWindowPVRSearch.h"
+#include "pvr/dialogs/GUIDialogPVRChannelManager.h"
+#include "pvr/dialogs/GUIDialogPVRChannelsOSD.h"
+#include "pvr/dialogs/GUIDialogPVRGroupManager.h"
+#include "pvr/dialogs/GUIDialogPVRGuideInfo.h"
+#include "pvr/dialogs/GUIDialogPVRGuideOSD.h"
+#include "pvr/dialogs/GUIDialogPVRGuideSearch.h"
+#include "pvr/dialogs/GUIDialogPVRRadioRDSInfo.h"
+#include "pvr/dialogs/GUIDialogPVRRecordingInfo.h"
+#include "pvr/dialogs/GUIDialogPVRTimerSettings.h"
+
+#include "video/dialogs/GUIDialogTeletext.h"
+#include "dialogs/GUIDialogSlider.h"
+#include "dialogs/GUIDialogPlayEject.h"
+#include "dialogs/GUIDialogMediaFilter.h"
+#include "video/dialogs/GUIDialogSubtitles.h"
+#include "settings/dialogs/GUIDialogAudioDSPManager.h"
+#include "settings/dialogs/GUIDialogAudioDSPSettings.h"
+
+#include "peripherals/dialogs/GUIDialogPeripheralSettings.h"
+#include "addons/AddonCallbacksGUI.h"
+
+using namespace PVR;
+using namespace PERIPHERALS;
+using namespace KODI::MESSAGING;
 
 CGUIWindowManager::CGUIWindowManager(void)
 {
   m_pCallback = NULL;
-  m_bShowOverlay = true;
   m_iNested = 0;
   m_initialized = false;
 }
@@ -52,9 +160,255 @@ CGUIWindowManager::~CGUIWindowManager(void)
 void CGUIWindowManager::Initialize()
 {
   m_tracker.SelectAlgorithm();
+
   m_initialized = true;
 
   LoadNotOnDemandWindows();
+
+  CApplicationMessenger::GetInstance().RegisterReceiver(this);
+}
+
+void CGUIWindowManager::CreateWindows()
+{
+  Add(new CGUIWindowHome);
+  Add(new CGUIWindowPrograms);
+  Add(new CGUIWindowPictures);
+  Add(new CGUIWindowFileManager);
+  Add(new CGUIWindowSettings);
+  Add(new CGUIWindowSystemInfo);
+#ifdef HAS_GL
+  Add(new CGUIWindowTestPatternGL);
+#endif
+#ifdef HAS_DX
+  Add(new CGUIWindowTestPatternDX);
+#endif
+  Add(new CGUIWindowSettingsScreenCalibration);
+  Add(new CGUIWindowSettingsCategory);
+  Add(new CGUIWindowVideoNav);
+  Add(new CGUIWindowVideoPlaylist);
+  Add(new CGUIWindowLoginScreen);
+  Add(new CGUIWindowSettingsProfile);
+  Add(new CGUIWindow(WINDOW_SKIN_SETTINGS, "SkinSettings.xml"));
+  Add(new CGUIWindowAddonBrowser);
+  Add(new CGUIWindowScreensaverDim);
+  Add(new CGUIWindowDebugInfo);
+  Add(new CGUIWindowPointer);
+  Add(new CGUIDialogYesNo);
+  Add(new CGUIDialogProgress);
+  Add(new CGUIDialogExtendedProgressBar);
+  Add(new CGUIDialogKeyboardGeneric);
+  Add(new CGUIDialogVolumeBar);
+  Add(new CGUIDialogSeekBar);
+  Add(new CGUIDialogSubMenu);
+  Add(new CGUIDialogContextMenu);
+  Add(new CGUIDialogKaiToast);
+  Add(new CGUIDialogNumeric);
+  Add(new CGUIDialogGamepad);
+  Add(new CGUIDialogButtonMenu);
+  Add(new CGUIDialogMuteBug);
+  Add(new CGUIDialogPlayerControls);
+  Add(new CGUIDialogSlider);
+  Add(new CGUIDialogMusicOSD);
+  Add(new CGUIDialogVisualisationPresetList);
+  Add(new CGUIDialogVideoSettings);
+  Add(new CGUIDialogAudioSubtitleSettings);
+  Add(new CGUIDialogVideoBookmarks);
+  // Don't add the filebrowser dialog - it's created and added when it's needed
+  Add(new CGUIDialogNetworkSetup);
+  Add(new CGUIDialogMediaSource);
+  Add(new CGUIDialogProfileSettings);
+  Add(new CGUIDialogFavourites);
+  Add(new CGUIDialogSongInfo);
+  Add(new CGUIDialogSmartPlaylistEditor);
+  Add(new CGUIDialogSmartPlaylistRule);
+  Add(new CGUIDialogBusy);
+  Add(new CGUIDialogPictureInfo);
+  Add(new CGUIDialogAddonInfo);
+  Add(new CGUIDialogAddonSettings);
+#ifdef HAS_LINUX_NETWORK
+  Add(new CGUIDialogAccessPoints);
+#endif
+
+  Add(new CGUIDialogLockSettings);
+
+  Add(new CGUIDialogContentSettings);
+
+  Add(new CGUIDialogPlayEject);
+
+  Add(new CGUIDialogPeripheralSettings);
+
+  Add(new CGUIDialogMediaFilter);
+  Add(new CGUIDialogSubtitles);
+
+  Add(new CGUIWindowMusicPlayList);
+  Add(new CGUIWindowMusicNav);
+  Add(new CGUIWindowMusicPlaylistEditor);
+
+  /* Load PVR related Windows and Dialogs */
+  Add(new CGUIDialogTeletext);
+  Add(new CGUIWindowPVRChannels(false));
+  Add(new CGUIWindowPVRRecordings(false));
+  Add(new CGUIWindowPVRGuide(false));
+  Add(new CGUIWindowPVRTimers(false));
+  Add(new CGUIWindowPVRSearch(false));
+  Add(new CGUIWindowPVRChannels(true));
+  Add(new CGUIWindowPVRRecordings(true));
+  Add(new CGUIWindowPVRGuide(true));
+  Add(new CGUIWindowPVRTimers(true));
+  Add(new CGUIDialogPVRRadioRDSInfo);
+  Add(new CGUIWindowPVRSearch(true));
+  Add(new CGUIDialogPVRGuideInfo);
+  Add(new CGUIDialogPVRRecordingInfo);
+  Add(new CGUIDialogPVRTimerSettings);
+  Add(new CGUIDialogPVRGroupManager);
+  Add(new CGUIDialogPVRChannelManager);
+  Add(new CGUIDialogPVRGuideSearch);
+  Add(new CGUIDialogPVRChannelsOSD);
+  Add(new CGUIDialogPVRGuideOSD);
+
+  Add(new ActiveAE::CGUIDialogAudioDSPManager);
+  Add(new ActiveAE::CGUIDialogAudioDSPSettings);
+
+  Add(new CGUIDialogSelect);
+  Add(new CGUIDialogMusicInfo);
+  Add(new CGUIDialogOK);
+  Add(new CGUIDialogVideoInfo);
+  Add(new CGUIDialogTextViewer);
+  Add(new CGUIWindowFullScreen);
+  Add(new CGUIWindowVisualisation);
+  Add(new CGUIWindowSlideShow);
+
+  Add(new CGUIDialogVideoOSD);
+  Add(new CGUIWindowScreensaver);
+  Add(new CGUIWindowWeather);
+  Add(new CGUIWindowStartup);
+  Add(new CGUIWindowSplash);
+
+  Add(new CGUIWindowEventLog);
+}
+
+bool CGUIWindowManager::DestroyWindows()
+{
+  try
+  {
+    Delete(WINDOW_SPLASH);
+    Delete(WINDOW_MUSIC_PLAYLIST);
+    Delete(WINDOW_MUSIC_PLAYLIST_EDITOR);
+    Delete(WINDOW_MUSIC_FILES);
+    Delete(WINDOW_MUSIC_NAV);
+    Delete(WINDOW_DIALOG_MUSIC_INFO);
+    Delete(WINDOW_DIALOG_VIDEO_INFO);
+    Delete(WINDOW_VIDEO_FILES);
+    Delete(WINDOW_VIDEO_PLAYLIST);
+    Delete(WINDOW_VIDEO_NAV);
+    Delete(WINDOW_FILES);
+    Delete(WINDOW_DIALOG_YES_NO);
+    Delete(WINDOW_DIALOG_PROGRESS);
+    Delete(WINDOW_DIALOG_NUMERIC);
+    Delete(WINDOW_DIALOG_GAMEPAD);
+    Delete(WINDOW_DIALOG_SUB_MENU);
+    Delete(WINDOW_DIALOG_BUTTON_MENU);
+    Delete(WINDOW_DIALOG_CONTEXT_MENU);
+    Delete(WINDOW_DIALOG_PLAYER_CONTROLS);
+    Delete(WINDOW_DIALOG_MUSIC_OSD);
+    Delete(WINDOW_DIALOG_VIS_PRESET_LIST);
+    Delete(WINDOW_DIALOG_SELECT);
+    Delete(WINDOW_DIALOG_OK);
+    Delete(WINDOW_DIALOG_KEYBOARD);
+    Delete(WINDOW_FULLSCREEN_VIDEO);
+    Delete(WINDOW_DIALOG_PROFILE_SETTINGS);
+    Delete(WINDOW_DIALOG_LOCK_SETTINGS);
+    Delete(WINDOW_DIALOG_NETWORK_SETUP);
+    Delete(WINDOW_DIALOG_MEDIA_SOURCE);
+    Delete(WINDOW_DIALOG_VIDEO_OSD_SETTINGS);
+    Delete(WINDOW_DIALOG_AUDIO_OSD_SETTINGS);
+    Delete(WINDOW_DIALOG_VIDEO_BOOKMARKS);
+    Delete(WINDOW_DIALOG_CONTENT_SETTINGS);
+    Delete(WINDOW_DIALOG_FAVOURITES);
+    Delete(WINDOW_DIALOG_SONG_INFO);
+    Delete(WINDOW_DIALOG_SMART_PLAYLIST_EDITOR);
+    Delete(WINDOW_DIALOG_SMART_PLAYLIST_RULE);
+    Delete(WINDOW_DIALOG_BUSY);
+    Delete(WINDOW_DIALOG_PICTURE_INFO);
+    Delete(WINDOW_DIALOG_ADDON_INFO);
+    Delete(WINDOW_DIALOG_ADDON_SETTINGS);
+    Delete(WINDOW_DIALOG_ACCESS_POINTS);
+    Delete(WINDOW_DIALOG_SLIDER);
+    Delete(WINDOW_DIALOG_MEDIA_FILTER);
+    Delete(WINDOW_DIALOG_SUBTITLES);
+
+    /* Delete PVR related windows and dialogs */
+    Delete(WINDOW_TV_CHANNELS);
+    Delete(WINDOW_TV_RECORDINGS);
+    Delete(WINDOW_TV_GUIDE);
+    Delete(WINDOW_TV_TIMERS);
+    Delete(WINDOW_TV_SEARCH);
+    Delete(WINDOW_RADIO_CHANNELS);
+    Delete(WINDOW_RADIO_RECORDINGS);
+    Delete(WINDOW_RADIO_GUIDE);
+    Delete(WINDOW_RADIO_TIMERS);
+    Delete(WINDOW_RADIO_SEARCH);
+    Delete(WINDOW_DIALOG_PVR_GUIDE_INFO);
+    Delete(WINDOW_DIALOG_PVR_RECORDING_INFO);
+    Delete(WINDOW_DIALOG_PVR_TIMER_SETTING);
+    Delete(WINDOW_DIALOG_PVR_GROUP_MANAGER);
+    Delete(WINDOW_DIALOG_PVR_CHANNEL_MANAGER);
+    Delete(WINDOW_DIALOG_PVR_GUIDE_SEARCH);
+    Delete(WINDOW_DIALOG_PVR_CHANNEL_SCAN);
+    Delete(WINDOW_DIALOG_PVR_RADIO_RDS_INFO);
+    Delete(WINDOW_DIALOG_PVR_UPDATE_PROGRESS);
+    Delete(WINDOW_DIALOG_PVR_OSD_CHANNELS);
+    Delete(WINDOW_DIALOG_PVR_OSD_GUIDE);
+    Delete(WINDOW_DIALOG_OSD_TELETEXT);
+
+    Delete(WINDOW_DIALOG_AUDIO_DSP_MANAGER);
+    Delete(WINDOW_DIALOG_AUDIO_DSP_OSD_SETTINGS);
+
+    Delete(WINDOW_DIALOG_TEXT_VIEWER);
+    Delete(WINDOW_DIALOG_PLAY_EJECT);
+    Delete(WINDOW_STARTUP_ANIM);
+    Delete(WINDOW_LOGIN_SCREEN);
+    Delete(WINDOW_VISUALISATION);
+    Delete(WINDOW_SETTINGS_MENU);
+    Delete(WINDOW_SETTINGS_PROFILES);
+    Delete(WINDOW_SETTINGS_MYPICTURES);  // all the settings categories
+    Delete(WINDOW_TEST_PATTERN);
+    Delete(WINDOW_SCREEN_CALIBRATION);
+    Delete(WINDOW_SYSTEM_INFORMATION);
+    Delete(WINDOW_SCREENSAVER);
+    Delete(WINDOW_DIALOG_VIDEO_OSD);
+    Delete(WINDOW_SLIDESHOW);
+    Delete(WINDOW_ADDON_BROWSER);
+    Delete(WINDOW_SKIN_SETTINGS);
+
+    Delete(WINDOW_HOME);
+    Delete(WINDOW_PROGRAMS);
+    Delete(WINDOW_PICTURES);
+    Delete(WINDOW_WEATHER);
+
+    Delete(WINDOW_SETTINGS_MYPICTURES);
+    Remove(WINDOW_SETTINGS_MYPROGRAMS);
+    Remove(WINDOW_SETTINGS_MYWEATHER);
+    Remove(WINDOW_SETTINGS_MYMUSIC);
+    Remove(WINDOW_SETTINGS_SYSTEM);
+    Remove(WINDOW_SETTINGS_MYVIDEOS);
+    Remove(WINDOW_SETTINGS_SERVICE);
+    Remove(WINDOW_SETTINGS_APPEARANCE);
+    Remove(WINDOW_SETTINGS_MYPVR);
+    Remove(WINDOW_DIALOG_KAI_TOAST);
+
+    Remove(WINDOW_DIALOG_SEEK_BAR);
+    Remove(WINDOW_DIALOG_VOLUME_BAR);
+
+    Delete(WINDOW_EVENT_LOG);
+  }
+  catch (...)
+  {
+    CLog::Log(LOGERROR, "Exception in CGUIWindowManager::DestroyWindows()");
+    return false;
+  }
+
+  return true;
 }
 
 bool CGUIWindowManager::SendMessage(int message, int senderID, int destID, int param1, int param2)
@@ -187,8 +541,8 @@ void CGUIWindowManager::Add(CGUIWindow* pWindow)
   // push back all the windows if there are more than one covered by this class
   CSingleLock lock(g_graphicsContext);
   m_idCache.Invalidate();
-  const vector<int>& idRange = pWindow->GetIDRange();
-  for (vector<int>::const_iterator idIt = idRange.begin(); idIt != idRange.end() ; ++idIt)
+  const std::vector<int>& idRange = pWindow->GetIDRange();
+  for (std::vector<int>::const_iterator idIt = idRange.begin(); idIt != idRange.end() ; ++idIt)
   {
     WindowMap::iterator it = m_mapWindows.find(*idIt);
     if (it != m_mapWindows.end())
@@ -197,7 +551,7 @@ void CGUIWindowManager::Add(CGUIWindow* pWindow)
                           "to the window manager", *idIt);
       return;
     }
-    m_mapWindows.insert(pair<int, CGUIWindow *>(*idIt, pWindow));
+    m_mapWindows.insert(std::pair<int, CGUIWindow *>(*idIt, pWindow));
   }
 }
 
@@ -208,12 +562,15 @@ void CGUIWindowManager::AddCustomWindow(CGUIWindow* pWindow)
   m_vecCustomWindows.push_back(pWindow);
 }
 
-void CGUIWindowManager::AddModeless(CGUIWindow* dialog)
+void CGUIWindowManager::RegisterDialog(CGUIWindow* dialog)
 {
   CSingleLock lock(g_graphicsContext);
-  // only add the window if it's not already added
-  for (iDialog it = m_activeDialogs.begin(); it != m_activeDialogs.end(); ++it)
-    if (*it == dialog) return;
+  // only add the window if it does not exists
+  for (const auto& activeDialog : m_activeDialogs)
+  {
+    if (activeDialog->GetID() == dialog->GetID())
+      return;
+  }
   m_activeDialogs.push_back(dialog);
 }
 
@@ -224,7 +581,7 @@ void CGUIWindowManager::Remove(int id)
   WindowMap::iterator it = m_mapWindows.find(id);
   if (it != m_mapWindows.end())
   {
-    for(vector<CGUIWindow*>::iterator it2 = m_activeDialogs.begin(); it2 != m_activeDialogs.end();)
+    for(std::vector<CGUIWindow*>::iterator it2 = m_activeDialogs.begin(); it2 != m_activeDialogs.end();)
     {
       if(*it2 == it->second)
         it2 = m_activeDialogs.erase(it2);
@@ -304,9 +661,6 @@ void CGUIWindowManager::PreviousWindow()
   // tell our info manager which window we are going to
   g_infoManager.SetNextWindow(previousWindow);
 
-  // set our overlay state (enables out animations on window change)
-  HideOverlay(pNewWindow->GetOverlayState());
-
   // deinitialize our window
   CloseWindowSync(pCurrentWindow);
 
@@ -325,47 +679,52 @@ void CGUIWindowManager::PreviousWindow()
   return;
 }
 
-void CGUIWindowManager::ChangeActiveWindow(int newWindow, const CStdString& strPath)
+void CGUIWindowManager::ChangeActiveWindow(int newWindow, const std::string& strPath)
 {
-  vector<CStdString> params;
+  std::vector<std::string> params;
   if (!strPath.empty())
     params.push_back(strPath);
   ActivateWindow(newWindow, params, true);
 }
 
-void CGUIWindowManager::ActivateWindow(int iWindowID, const CStdString& strPath)
+void CGUIWindowManager::ActivateWindow(int iWindowID, const std::string& strPath)
 {
-  vector<CStdString> params;
+  std::vector<std::string> params;
   if (!strPath.empty())
     params.push_back(strPath);
   ActivateWindow(iWindowID, params, false);
 }
 
-void CGUIWindowManager::ActivateWindow(int iWindowID, const vector<CStdString>& params, bool swappingWindows)
+void CGUIWindowManager::ForceActivateWindow(int iWindowID, const std::string& strPath)
+{
+  std::vector<std::string> params;
+  if (!strPath.empty())
+    params.push_back(strPath);
+  ActivateWindow(iWindowID, params, false, true);
+}
+
+void CGUIWindowManager::ActivateWindow(int iWindowID, const std::vector<std::string>& params, bool swappingWindows /* = false */, bool force /* = false */)
 {
   if (!g_application.IsCurrentThread())
   {
     // make sure graphics lock is not held
     CSingleExit leaveIt(g_graphicsContext);
-    CApplicationMessenger::Get().ActivateWindow(iWindowID, params, swappingWindows);
+    CApplicationMessenger::GetInstance().SendMsg(TMSG_GUI_ACTIVATE_WINDOW, iWindowID, swappingWindows ? 1 : 0, nullptr, "", params);
   }
   else
   {
     CSingleLock lock(g_graphicsContext);
-    ActivateWindow_Internal(iWindowID, params, swappingWindows);
+    ActivateWindow_Internal(iWindowID, params, swappingWindows, force);
   }
 }
 
-void CGUIWindowManager::ActivateWindow_Internal(int iWindowID, const vector<CStdString>& params, bool swappingWindows)
+void CGUIWindowManager::ActivateWindow_Internal(int iWindowID, const std::vector<std::string>& params, bool swappingWindows, bool force /* = false */)
 {
   // translate virtual windows
   // virtual music window which returns the last open music window (aka the music start window)
-  if (iWindowID == WINDOW_MUSIC)
-  {
-    iWindowID = CSettings::Get().GetInt("mymusic.startwindow");
-    // ensure the music virtual window only returns music files and music library windows
-    if (iWindowID != WINDOW_MUSIC_NAV)
-      iWindowID = WINDOW_MUSIC_FILES;
+  if (iWindowID == WINDOW_MUSIC || iWindowID == WINDOW_MUSIC_FILES)
+  { // backward compatibility for pre-something
+    iWindowID = WINDOW_MUSIC_NAV;
   }
   // virtual video window which returns the last open video window (aka the video start window)
   if (iWindowID == WINDOW_VIDEOS || iWindowID == WINDOW_VIDEO_FILES)
@@ -399,20 +758,29 @@ void CGUIWindowManager::ActivateWindow_Internal(int iWindowID, const vector<CStd
     CLog::Log(LOGERROR, "Unable to locate window with id %d.  Check skin files", iWindowID - WINDOW_HOME);
     return ;
   }
+  else if (!pNewWindow->CanBeActivated())
+  {
+    return;
+  }
   else if (pNewWindow->IsDialog())
   { // if we have a dialog, we do a DoModal() rather than activate the window
     if (!pNewWindow->IsDialogRunning())
     {
       CSingleExit exitit(g_graphicsContext);
-      ((CGUIDialog *)pNewWindow)->DoModal(iWindowID, params.size() ? params[0] : "");
+      ((CGUIDialog *)pNewWindow)->Open(params.size() > 0 ? params[0] : "");
     }
     return;
   }
 
-  g_infoManager.SetNextWindow(iWindowID);
+  // don't activate a window if there are active modal dialogs of type NORMAL
+  if (!force && HasModalDialog({ DialogModalityType::MODAL }))
+  {
+    CLog::Log(LOGINFO, "Activate of window '%i' refused because there are active modal dialogs", iWindowID);
+    g_audioManager.PlayActionSound(CAction(ACTION_ERROR));
+    return;
+  }
 
-  // set our overlay state
-  HideOverlay(pNewWindow->GetOverlayState());
+  g_infoManager.SetNextWindow(iWindowID);
 
   // deactivate any window
   int currentWindow = GetActiveWindow();
@@ -440,11 +808,127 @@ void CGUIWindowManager::ActivateWindow_Internal(int iWindowID, const vector<CStd
 void CGUIWindowManager::CloseDialogs(bool forceClose) const
 {
   CSingleLock lock(g_graphicsContext);
-  while (m_activeDialogs.size() > 0)
+  for (const auto& dialog : m_activeDialogs)
   {
-    CGUIWindow* win = m_activeDialogs[0];
-    win->Close(forceClose);
+    dialog->Close(forceClose);
   }
+}
+
+void CGUIWindowManager::CloseInternalModalDialogs(bool forceClose) const
+{
+  CSingleLock lock(g_graphicsContext);
+  for (const auto& dialog : m_activeDialogs)
+  {
+    if (dialog->IsModalDialog() && !IsAddonWindow(dialog->GetID()) && !IsPythonWindow(dialog->GetID()))
+      dialog->Close(forceClose);
+  }
+}
+
+void CGUIWindowManager::OnApplicationMessage(ThreadMessage* pMsg)
+{
+  switch (pMsg->dwMessage)
+  {
+  case TMSG_GUI_DIALOG_OPEN:  
+  {
+    if (pMsg->lpVoid)
+      static_cast<CGUIDialog*>(pMsg->lpVoid)->Open(pMsg->strParam);
+    else
+    {
+      CGUIDialog* pDialog = static_cast<CGUIDialog*>(GetWindow(pMsg->param1));
+      if (pDialog)
+        pDialog->Open(pMsg->strParam);
+    }
+  }
+  break;
+
+  case TMSG_GUI_WINDOW_CLOSE:
+  {
+    CGUIWindow *window = static_cast<CGUIWindow *>(pMsg->lpVoid);
+    if (window)
+      window->Close(pMsg->param1 & 0x1 ? true : false, pMsg->param1, pMsg->param1 & 0x2 ? true : false);
+  }
+  break;
+
+  case TMSG_GUI_ACTIVATE_WINDOW:
+  {
+    ActivateWindow(pMsg->param1, pMsg->params, pMsg->param2 > 0);
+  }
+  break;
+
+  case TMSG_GUI_ADDON_DIALOG:
+  {
+    if (pMsg->lpVoid)
+    { // TODO: This is ugly - really these python dialogs should just be normal XBMC dialogs
+      static_cast<ADDON::CGUIAddonWindowDialog *>(pMsg->lpVoid)->Show_Internal(pMsg->param2 > 0);
+    }
+  }
+  break;
+
+#ifdef HAS_PYTHON
+  case TMSG_GUI_PYTHON_DIALOG:
+  {
+    // This hack is not much better but at least I don't need to make ApplicationMessenger
+    //  know about Addon (Python) specific classes.
+    CAction caction(pMsg->param1);
+    static_cast<CGUIWindow*>(pMsg->lpVoid)->OnAction(caction);
+  }
+  break;
+#endif
+
+  case TMSG_GUI_ACTION:
+  {
+    if (pMsg->lpVoid)
+    {
+      CAction *action = static_cast<CAction *>(pMsg->lpVoid);
+      if (pMsg->param1 == WINDOW_INVALID)
+        g_application.OnAction(*action);
+      else
+      {
+        CGUIWindow *pWindow = GetWindow(pMsg->param1);
+        if (pWindow)
+          pWindow->OnAction(*action);
+        else
+          CLog::Log(LOGWARNING, "Failed to get window with ID %i to send an action to", pMsg->param1);
+      }
+      delete action;
+    }
+  }
+  break;
+
+  case TMSG_GUI_MESSAGE:
+    if (pMsg->lpVoid)
+    {
+      CGUIMessage *message = static_cast<CGUIMessage *>(pMsg->lpVoid);
+      SendMessage(*message, pMsg->param1);
+      delete message;
+    }
+    break;
+
+  case TMSG_GUI_DIALOG_YESNO:
+    if (!pMsg->lpVoid && pMsg->param1 < 0 && pMsg->param2 < 0)
+      return;
+
+    auto dialog = static_cast<CGUIDialogYesNo*>(GetWindow(WINDOW_DIALOG_YES_NO));
+    if (!dialog)
+      return;
+
+    if (pMsg->lpVoid)
+      pMsg->SetResult(dialog->ShowAndGetInput(*static_cast<HELPERS::DialogYesNoMessage*>(pMsg->lpVoid)));
+    else
+    {
+      HELPERS::DialogYesNoMessage options;
+      options.heading = pMsg->param1;
+      options.text = pMsg->param2;
+      pMsg->SetResult(dialog->ShowAndGetInput(options));
+    }
+
+    break;
+  }
+}
+
+int CGUIWindowManager::GetMessageMask()
+{
+  return TMSG_MASK_WINDOWMANAGER;
 }
 
 bool CGUIWindowManager::OnAction(const CAction &action) const
@@ -469,14 +953,6 @@ bool CGUIWindowManager::OnAction(const CAction &action) const
         return false;
       }
       return true; // do nothing with the action until the anim is finished
-    }
-    // music or video overlay are handled as a special case, as they're modeless, but we allow
-    // clicking on them with the mouse.
-    if (action.IsMouse() && (dialog->GetID() == WINDOW_DIALOG_VIDEO_OVERLAY ||
-                             dialog->GetID() == WINDOW_DIALOG_MUSIC_OVERLAY))
-    {
-      if (dialog->OnAction(action))
-        return true;
     }
     lock.Enter();
     if (topMost > m_activeDialogs.size())
@@ -537,7 +1013,7 @@ void CGUIWindowManager::RenderPass() const
   }
 
   // we render the dialogs based on their render order.
-  vector<CGUIWindow *> renderList = m_activeDialogs;
+  std::vector<CGUIWindow *> renderList = m_activeDialogs;
   stable_sort(renderList.begin(), renderList.end(), RenderOrderSortFunction);
   
   for (iDialog it = renderList.begin(); it != renderList.end(); ++it)
@@ -545,6 +1021,24 @@ void CGUIWindowManager::RenderPass() const
     if ((*it)->IsDialogRunning())
       (*it)->DoRender();
   }
+}
+
+void CGUIWindowManager::RenderEx() const
+{
+  CGUIWindow* pWindow = GetWindow(GetActiveWindow());
+  if (pWindow)
+    pWindow->RenderEx();
+
+  // We don't call RenderEx for now on dialogs since it is used
+  // to trigger non gui video rendering. We can activate it later at any time.
+  /*
+  vector<CGUIWindow *> &activeDialogs = m_activeDialogs;
+  for (iDialog it = activeDialogs.begin(); it != activeDialogs.end(); ++it)
+  {
+    if ((*it)->IsDialogRunning())
+      (*it)->RenderEx();
+  }
+  */
 }
 
 bool CGUIWindowManager::Render()
@@ -586,7 +1080,7 @@ bool CGUIWindowManager::Render()
   if (g_advancedSettings.m_guiVisualizeDirtyRegions)
   {
     g_graphicsContext.SetRenderingResolution(g_graphicsContext.GetResInfo(), false);
-    const CDirtyRegionList &markedRegions  = m_tracker.GetMarkedRegions(); 
+    const CDirtyRegionList &markedRegions  = m_tracker.GetMarkedRegions();
     for (CDirtyRegionList::const_iterator i = markedRegions.begin(); i != markedRegions.end(); ++i)
       CGUITexture::DrawQuad(*i, 0x0fff0000);
     for (CDirtyRegionList::const_iterator i = dirtyRegions.begin(); i != dirtyRegions.end(); ++i)
@@ -605,7 +1099,7 @@ void CGUIWindowManager::AfterRender()
     pWindow->AfterRender();
 
   // make copy of vector as we may remove items from it as we go
-  vector<CGUIWindow *> activeDialogs = m_activeDialogs;
+  std::vector<CGUIWindow *> activeDialogs = m_activeDialogs;
   for (iDialog it = activeDialogs.begin(); it != activeDialogs.end(); ++it)
   {
     if ((*it)->IsDialogRunning())
@@ -635,11 +1129,11 @@ void CGUIWindowManager::FrameMove()
     pWindow->FrameMove();
   // update any dialogs - we take a copy of the vector as some dialogs may close themselves
   // during this call
-  vector<CGUIWindow *> dialogs = m_activeDialogs;
+  std::vector<CGUIWindow *> dialogs = m_activeDialogs;
   for (iDialog it = dialogs.begin(); it != dialogs.end(); ++it)
     (*it)->FrameMove();
 
-  g_infoManager.m_AVInfoValid = false;
+  g_infoManager.UpdateAVInfo();
 }
 
 CGUIWindow* CGUIWindowManager::GetWindow(int id) const
@@ -685,7 +1179,7 @@ void CGUIWindowManager::DeInitialize()
   for (WindowMap::iterator it = m_mapWindows.begin(); it != m_mapWindows.end(); ++it)
   {
     CGUIWindow* pWindow = (*it).second;
-    if (IsWindowActive(it->first))
+    if (IsWindowActive(it->first, false))
     {
       pWindow->DisableAnimations();
       pWindow->Close(true);
@@ -712,18 +1206,6 @@ void CGUIWindowManager::DeInitialize()
   m_initialized = false;
 }
 
-/// \brief Route to a window
-/// \param pWindow Window to route to
-void CGUIWindowManager::RouteToWindow(CGUIWindow* dialog)
-{
-  CSingleLock lock(g_graphicsContext);
-  // Just to be sure: Unroute this window,
-  // #we may have routed to it before
-  RemoveDialog(dialog->GetID());
-
-  m_activeDialogs.push_back(dialog);
-}
-
 /// \brief Unroute window
 /// \param id ID of the window routed
 void CGUIWindowManager::RemoveDialog(int id)
@@ -739,15 +1221,25 @@ void CGUIWindowManager::RemoveDialog(int id)
   }
 }
 
-bool CGUIWindowManager::HasModalDialog() const
+bool CGUIWindowManager::HasModalDialog(const std::vector<DialogModalityType>& types) const
 {
   CSingleLock lock(g_graphicsContext);
   for (ciDialog it = m_activeDialogs.begin(); it != m_activeDialogs.end(); ++it)
   {
-    CGUIWindow *window = *it;
-    if (window->IsModalDialog())
-    { // have a modal window
-      if (!window->IsAnimating(ANIM_TYPE_WINDOW_CLOSE))
+    if ((*it)->IsDialog() &&
+        (*it)->IsModalDialog() &&
+        !(*it)->IsAnimating(ANIM_TYPE_WINDOW_CLOSE))
+    {
+      if (types.size() > 0)
+      {
+        CGUIDialog *dialog = static_cast<CGUIDialog*>(*it);
+        for (const auto &type : types)
+        {
+          if (dialog->GetModalityType() == type)
+            return true;
+        }
+      }
+      else
         return true;
     }
   }
@@ -780,7 +1272,7 @@ void CGUIWindowManager::SendThreadMessage(CGUIMessage& message, int window /*= 0
   CSingleLock lock(m_critSection);
 
   CGUIMessage* msg = new CGUIMessage(message);
-  m_vecThreadMessages.push_back( pair<CGUIMessage*,int>(msg,window) );
+  m_vecThreadMessages.push_back( std::pair<CGUIMessage*,int>(msg,window) );
 }
 
 void CGUIWindowManager::DispatchThreadMessages()
@@ -865,6 +1357,33 @@ int CGUIWindowManager::GetActiveWindow() const
   return WINDOW_INVALID;
 }
 
+int CGUIWindowManager::GetActiveWindowID()
+{
+  // Get the currently active window
+  int iWin = GetActiveWindow() & WINDOW_ID_MASK;
+
+  // If there is a dialog active get the dialog id instead
+  if (HasModalDialog())
+    iWin = GetTopMostModalDialogID() & WINDOW_ID_MASK;
+
+  // If the window is FullScreenVideo check for special cases
+  if (iWin == WINDOW_FULLSCREEN_VIDEO)
+  {
+    // check if we're in a DVD menu
+    if (g_application.m_pPlayer->IsInMenu())
+      iWin = WINDOW_VIDEO_MENU;
+    // check for LiveTV and switch to it's virtual window
+    else if (g_PVRManager.IsStarted() && g_application.CurrentFileItem().HasPVRChannelInfoTag())
+      iWin = WINDOW_FULLSCREEN_LIVETV;
+  }
+  // special casing for PVR radio
+  if (iWin == WINDOW_VISUALISATION && g_PVRManager.IsStarted() && g_application.CurrentFileItem().HasPVRChannelInfoTag())
+    iWin = WINDOW_FULLSCREEN_RADIO;
+
+  // Return the window id
+  return iWin;
+}
+
 // same as GetActiveWindow() except it first grabs dialogs
 int CGUIWindowManager::GetFocusedWindow() const
 {
@@ -891,16 +1410,18 @@ bool CGUIWindowManager::IsWindowActive(int id, bool ignoreClosing /* = true */) 
   return false; // window isn't active
 }
 
-bool CGUIWindowManager::IsWindowActive(const CStdString &xmlFile, bool ignoreClosing /* = true */) const
+bool CGUIWindowManager::IsWindowActive(const std::string &xmlFile, bool ignoreClosing /* = true */) const
 {
   CSingleLock lock(g_graphicsContext);
   CGUIWindow *window = GetWindow(GetActiveWindow());
-  if (window && URIUtils::GetFileName(window->GetProperty("xmlfile").asString()).Equals(xmlFile)) return true;
+  if (window && StringUtils::EqualsNoCase(URIUtils::GetFileName(window->GetProperty("xmlfile").asString()), xmlFile))
+    return true;
   // run through the dialogs
   for (ciDialog it = m_activeDialogs.begin(); it != m_activeDialogs.end(); ++it)
   {
     CGUIWindow *window = *it;
-    if (URIUtils::GetFileName(window->GetProperty("xmlfile").asString()).Equals(xmlFile) && (!ignoreClosing || !window->IsAnimating(ANIM_TYPE_WINDOW_CLOSE)))
+    if (StringUtils::EqualsNoCase(URIUtils::GetFileName(window->GetProperty("xmlfile").asString()), xmlFile) &&
+        (!ignoreClosing || !window->IsAnimating(ANIM_TYPE_WINDOW_CLOSE)))
       return true;
   }
   return false; // window isn't active
@@ -911,7 +1432,7 @@ bool CGUIWindowManager::IsWindowVisible(int id) const
   return IsWindowActive(id, false);
 }
 
-bool CGUIWindowManager::IsWindowVisible(const CStdString &xmlFile) const
+bool CGUIWindowManager::IsWindowVisible(const std::string &xmlFile) const
 {
   return IsWindowActive(xmlFile, false);
 }
@@ -944,32 +1465,12 @@ void CGUIWindowManager::UnloadNotOnDemandWindows()
   }
 }
 
-bool CGUIWindowManager::IsOverlayAllowed() const
-{
-  if (GetActiveWindow() == WINDOW_FULLSCREEN_VIDEO ||
-      GetActiveWindow() == WINDOW_SCREENSAVER)
-    return false;
-  return m_bShowOverlay;
-}
-
-void CGUIWindowManager::ShowOverlay(CGUIWindow::OVERLAY_STATE state)
-{
-  if (state != CGUIWindow::OVERLAY_STATE_PARENT_WINDOW)
-    m_bShowOverlay = state == CGUIWindow::OVERLAY_STATE_SHOWN;
-}
-
-void CGUIWindowManager::HideOverlay(CGUIWindow::OVERLAY_STATE state)
-{
-  if (state == CGUIWindow::OVERLAY_STATE_HIDDEN)
-    m_bShowOverlay = false;
-}
-
 void CGUIWindowManager::AddToWindowHistory(int newWindowID)
 {
   // Check the window stack to see if this window is in our history,
   // and if so, pop all the other windows off the stack so that we
   // always have a predictable "Back" behaviour for each window
-  stack<int> historySave = m_windowHistory;
+  std::stack<int> historySave = m_windowHistory;
   while (!historySave.empty())
   {
     if (historySave.top() == newWindowID)
@@ -986,7 +1487,7 @@ void CGUIWindowManager::AddToWindowHistory(int newWindowID)
   }
 }
 
-void CGUIWindowManager::GetActiveModelessWindows(vector<int> &ids)
+void CGUIWindowManager::GetActiveModelessWindows(std::vector<int> &ids)
 {
   // run through our modeless windows, and construct a vector of them
   // useful for saving and restoring the modeless windows on skin change etc.
@@ -1002,7 +1503,7 @@ CGUIWindow *CGUIWindowManager::GetTopMostDialog() const
 {
   CSingleLock lock(g_graphicsContext);
   // find the window with the lowest render order
-  vector<CGUIWindow *> renderList = m_activeDialogs;
+  std::vector<CGUIWindow *> renderList = m_activeDialogs;
   stable_sort(renderList.begin(), renderList.end(), RenderOrderSortFunction);
 
   if (!renderList.size())
@@ -1020,10 +1521,10 @@ bool CGUIWindowManager::IsWindowTopMost(int id) const
   return false;
 }
 
-bool CGUIWindowManager::IsWindowTopMost(const CStdString &xmlFile) const
+bool CGUIWindowManager::IsWindowTopMost(const std::string &xmlFile) const
 {
   CGUIWindow *topMost = GetTopMostDialog();
-  if (topMost && URIUtils::GetFileName(topMost->GetProperty("xmlfile").asString()).Equals(xmlFile))
+  if (topMost && StringUtils::EqualsNoCase(URIUtils::GetFileName(topMost->GetProperty("xmlfile").asString()), xmlFile))
     return true;
   return false;
 }

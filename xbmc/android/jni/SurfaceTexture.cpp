@@ -20,11 +20,13 @@
 
 #include "JNIBase.h"
 #include "Context.h"
+#include "Activity.h"
 #include "ClassLoader.h"
 #include "SurfaceTexture.h"
 
 #include "jutils/jutils-details.hpp"
 
+#include "android/activity/JNIMainActivity.h"
 #include <algorithm>
 
 using namespace jni;
@@ -34,9 +36,9 @@ using namespace jni;
 CJNISurfaceTextureOnFrameAvailableListener* CJNISurfaceTextureOnFrameAvailableListener::m_listenerInstance(NULL);
 
 CJNISurfaceTextureOnFrameAvailableListener::CJNISurfaceTextureOnFrameAvailableListener()
-: CJNIBase("org/xbmc/xbmc/XBMCOnFrameAvailableListener")
+: CJNIBase("org/xbmc/kodi/XBMCOnFrameAvailableListener")
 {
-  CJNIContext *appInstance = CJNIContext::GetAppInstance();
+  CJNIMainActivity *appInstance = CJNIMainActivity::GetAppInstance();
   if (!appInstance)
     return;
 

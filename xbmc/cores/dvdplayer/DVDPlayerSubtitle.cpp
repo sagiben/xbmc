@@ -21,25 +21,15 @@
 #include "DVDPlayerSubtitle.h"
 #include "DVDCodecs/Overlay/DVDOverlay.h"
 #include "DVDCodecs/Overlay/DVDOverlaySpu.h"
-#include "DVDCodecs/Overlay/DVDOverlayText.h"
 #include "DVDCodecs/Overlay/DVDOverlayCodec.h"
 #include "DVDClock.h"
-#include "DVDInputStreams/DVDFactoryInputStream.h"
-#include "DVDInputStreams/DVDInputStream.h"
-#include "DVDInputStreams/DVDInputStreamNavigator.h"
 #include "DVDSubtitles/DVDSubtitleParser.h"
-#include "DVDSubtitles/DVDSubtitleStream.h"
-#include "DVDCodecs/DVDCodecs.h"
 #include "DVDCodecs/DVDFactoryCodec.h"
-#include "DVDDemuxers/DVDDemuxUtils.h"
 #include "utils/log.h"
-#include "utils/StringUtils.h"
 #include "threads/SingleLock.h"
 #ifdef TARGET_POSIX
 #include "config.h"
 #endif
-
-using namespace std;
 
 CDVDPlayerSubtitle::CDVDPlayerSubtitle(CDVDOverlayContainer* pOverlayContainer)
 {
@@ -53,16 +43,16 @@ CDVDPlayerSubtitle::CDVDPlayerSubtitle(CDVDOverlayContainer* pOverlayContainer)
 
 CDVDPlayerSubtitle::~CDVDPlayerSubtitle()
 {
-  CloseStream(false);
+  CloseStream(true);
 }
 
 
 void CDVDPlayerSubtitle::Flush()
 {
-  SendMessage(new CDVDMsg(CDVDMsg::GENERAL_FLUSH));
+  SendMessage(new CDVDMsg(CDVDMsg::GENERAL_FLUSH), 0);
 }
 
-void CDVDPlayerSubtitle::SendMessage(CDVDMsg* pMsg)
+void CDVDPlayerSubtitle::SendMessage(CDVDMsg* pMsg, int priority)
 {
   CSingleLock lock(m_section);
 
@@ -141,11 +131,11 @@ void CDVDPlayerSubtitle::SendMessage(CDVDMsg* pMsg)
   pMsg->Release();
 }
 
-bool CDVDPlayerSubtitle::OpenStream(CDVDStreamInfo &hints, string &filename)
+bool CDVDPlayerSubtitle::OpenStream(CDVDStreamInfo &hints, std::string &filename)
 {
   CSingleLock lock(m_section);
 
-  CloseStream(false);
+  CloseStream(true);
   m_streaminfo = hints;
 
   // okey check if this is a filesubtitle
@@ -155,14 +145,14 @@ bool CDVDPlayerSubtitle::OpenStream(CDVDStreamInfo &hints, string &filename)
     if (!m_pSubtitleFileParser)
     {
       CLog::Log(LOGERROR, "%s - Unable to create subtitle parser", __FUNCTION__);
-      CloseStream(false);
+      CloseStream(true);
       return false;
     }
 
     if (!m_pSubtitleFileParser->Open(hints))
     {
       CLog::Log(LOGERROR, "%s - Unable to init subtitle parser", __FUNCTION__);
-      CloseStream(false);
+      CloseStream(true);
       return false;
     }
     m_pSubtitleFileParser->Reset();
@@ -181,7 +171,7 @@ bool CDVDPlayerSubtitle::OpenStream(CDVDStreamInfo &hints, string &filename)
   return false;
 }
 
-void CDVDPlayerSubtitle::CloseStream(bool flush)
+void CDVDPlayerSubtitle::CloseStream(bool bWaitForBuffers)
 {
   CSingleLock lock(m_section);
 
@@ -194,7 +184,7 @@ void CDVDPlayerSubtitle::CloseStream(bool flush)
 
   m_dvdspus.FlushCurrentPacket();
 
-  if(flush)
+  if (!bWaitForBuffers)
     m_pOverlayContainer->Clear();
 }
 
@@ -233,7 +223,7 @@ void CDVDPlayerSubtitle::Process(double pts, double offset)
   }
 }
 
-bool CDVDPlayerSubtitle::AcceptsData()
+bool CDVDPlayerSubtitle::AcceptsData() const
 {
   // FIXME : This may still be causing problems + magic number :(
   return m_pOverlayContainer->GetSize() < 5;

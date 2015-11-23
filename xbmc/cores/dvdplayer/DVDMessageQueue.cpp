@@ -19,15 +19,12 @@
  */
 
 #include "DVDMessageQueue.h"
-#include "DVDDemuxers/DVDDemuxUtils.h"
 #include "utils/log.h"
 #include "threads/SingleLock.h"
 #include "DVDClock.h"
 #include "utils/MathUtils.h"
 
-using namespace std;
-
-CDVDMessageQueue::CDVDMessageQueue(const string &owner) : m_hEvent(true), m_owner(owner)
+CDVDMessageQueue::CDVDMessageQueue(const std::string &owner) : m_hEvent(true), m_owner(owner)
 {
   m_iDataSize     = 0;
   m_bAbortRequest = false;
@@ -44,7 +41,7 @@ CDVDMessageQueue::CDVDMessageQueue(const string &owner) : m_hEvent(true), m_owne
 CDVDMessageQueue::~CDVDMessageQueue()
 {
   // remove all remaining messages
-  Flush();
+  Flush(CDVDMsg::NONE);
 }
 
 void CDVDMessageQueue::Init()
@@ -91,7 +88,7 @@ void CDVDMessageQueue::End()
 {
   CSingleLock lock(m_section);
 
-  Flush();
+  Flush(CDVDMsg::NONE);
 
   m_bInitialized  = false;
   m_iDataSize     = 0;
@@ -160,7 +157,7 @@ MsgQueueReturnCode CDVDMessageQueue::Get(CDVDMsg** pMsg, unsigned int iTimeoutIn
     return MSGQ_NOT_INITIALIZED;
   }
 
-  if(m_list.empty() && m_bEmptied == false && priority == 0 && m_owner != "teletext")
+  if(m_list.empty() && m_bEmptied == false && priority == 0 && m_owner != "teletext" && m_owner != "rds")
   {
 #if !defined(TARGET_RASPBERRY_PI)
     CLog::Log(LOGWARNING, "CDVDMessageQueue(%s)::Get - asked for new data packet, with nothing available", m_owner.c_str());
@@ -249,19 +246,23 @@ void CDVDMessageQueue::WaitUntilEmpty()
 
 int CDVDMessageQueue::GetLevel() const
 {
+  CSingleLock lock(m_section);
+
   if(m_iDataSize > m_iMaxDataSize)
     return 100;
   if(m_iDataSize == 0)
     return 0;
 
   if(IsDataBased())
-    return min(100, 100 * m_iDataSize / m_iMaxDataSize);
+    return std::min(100, 100 * m_iDataSize / m_iMaxDataSize);
 
-  return min(100, MathUtils::round_int(100.0 * m_TimeSize * (m_TimeFront - m_TimeBack) / DVD_TIME_BASE ));
+  return std::min(100, MathUtils::round_int(100.0 * m_TimeSize * (m_TimeFront - m_TimeBack) / DVD_TIME_BASE ));
 }
 
 int CDVDMessageQueue::GetTimeSize() const
 {
+  CSingleLock lock(m_section);
+
   if(IsDataBased())
     return 0;
   else

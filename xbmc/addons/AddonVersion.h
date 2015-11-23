@@ -18,11 +18,7 @@
  *
  */
 
-#include <stdlib.h>
-#include <string.h>
-#include <iostream>
-#include <boost/operators.hpp>
-#include "utils/StdString.h"
+#include <string>
 
 namespace ADDON
 {
@@ -38,50 +34,43 @@ namespace ADDON
 
     See here for more info: http://www.debian.org/doc/debian-policy/ch-controlfields.html#s-f-Version
     */
-  class AddonVersion : public boost::totally_ordered<AddonVersion> {
+  class AddonVersion
+  {
   public:
-    AddonVersion(const AddonVersion& other) : mUpstream(NULL), mRevision(NULL) { *this = other; }
-    explicit AddonVersion(const CStdString& version);
-    ~AddonVersion();
+    AddonVersion(const AddonVersion& other) { *this = other; }
+    explicit AddonVersion(const std::string& version);
+    virtual ~AddonVersion() {};
 
     int Epoch() const { return mEpoch; }
-    const char *Upstream() const { return mUpstream; }
-    const char *Revision() const { return mRevision; }
+    const std::string &Upstream() const { return mUpstream; }
+    const std::string &Revision() const { return mRevision; }
 
     AddonVersion& operator=(const AddonVersion& other);
-    bool operator<(const AddonVersion& other) const;
+    bool operator< (const AddonVersion& other) const;
+    bool operator> (const AddonVersion& other) const;
+    bool operator<=(const AddonVersion& other) const;
+    bool operator>=(const AddonVersion& other) const;
     bool operator==(const AddonVersion& other) const;
-    CStdString Print() const;
-    const char *c_str() const { return m_originalVersion.c_str(); };
+    bool operator!=(const AddonVersion& other) const;
+    std::string asString() const;
     bool empty() const;
 
-    static bool SplitFileName(CStdString& ID, CStdString& version,
-                              const CStdString& filename);
+    static bool SplitFileName(std::string& ID, std::string& version,
+                              const std::string& filename);
 
-    static bool Test();
   protected:
-    CStdString m_originalVersion;
     int mEpoch;
-    char *mUpstream;
-    char *mRevision;
+    std::string mUpstream;
+    std::string mRevision;
 
     static int CompareComponent(const char *a, const char *b);
   };
 
-  inline AddonVersion::~AddonVersion()
-  {
-    free(mUpstream);
-    free(mRevision);
-  }
-
   inline AddonVersion& AddonVersion::operator=(const AddonVersion& other)
   {
-    free(mUpstream);
-    free(mRevision);
-    mEpoch = other.Epoch();
-    mUpstream = strdup(other.Upstream());
-    mRevision = strdup(other.Revision());
-    m_originalVersion = other.m_originalVersion;
+    mEpoch = other.mEpoch;
+    mUpstream = other.mUpstream;
+    mRevision = other.mRevision;
     return *this;
   }
 }

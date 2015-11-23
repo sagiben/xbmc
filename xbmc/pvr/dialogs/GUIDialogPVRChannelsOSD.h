@@ -20,9 +20,11 @@
  */
 
 #include "guilib/GUIDialog.h"
-#include "view/GUIViewControl.h"
 #include "utils/Observer.h"
+#include "view/GUIViewControl.h"
+
 #include "pvr/channels/PVRChannelGroupsContainer.h"
+
 #include <map>
 
 class CFileItemList;
@@ -45,6 +47,7 @@ namespace PVR
     virtual void OnDeinitWindow(int nextWindowID);
     virtual void RestoreControlStates();
     virtual void SaveControlStates();
+    virtual void SetInvalid();
 
     void CloseOrSelect(unsigned int iItem);
     void GotoChannel(int iItem);
@@ -59,9 +62,10 @@ namespace PVR
 
   private:
     CPVRChannelGroupPtr m_group;
-    std::map<int,int> m_groupSelectedItems;
-    void SaveSelectedItem(int iGroupID);
-    int GetLastSelectedItem(int iGroupID) const;
+    std::map<int, std::string> m_groupSelectedItemPaths;
+    void SaveSelectedItemPath(int iGroupID);
+    std::string GetLastSelectedItemPath(int iGroupID) const;
+    XbmcThreads::EndTime m_refreshTimeout;
   };
 }
 

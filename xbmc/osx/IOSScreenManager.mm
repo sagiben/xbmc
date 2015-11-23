@@ -30,15 +30,14 @@
 #include "WindowingFactory.h"
 #include "settings/DisplaySettings.h"
 #include "cores/AudioEngine/AEFactory.h"
+#include "osx/DarwinUtils.h"
 #undef BOOL
 
 #import <Foundation/Foundation.h>
 #include <objc/runtime.h>
 
 #import "IOSScreenManager.h"
-#if defined(TARGET_DARWIN_IOS_ATV2)
-#import "xbmc/osx/atv2/XBMCController.h"
-#elif defined(TARGET_DARWIN_IOS)
+#if defined(TARGET_DARWIN_IOS)
 #import "xbmc/osx/ios/XBMCController.h"
 #endif
 #import "IOSExternalTouchController.h"
@@ -72,7 +71,20 @@ static CEvent screenChangeEvent;
 - (void) setScreen:(unsigned int) screenIdx withMode:(UIScreenMode *)mode
 {
     UIScreen *newScreen = [[UIScreen screens] objectAtIndex:screenIdx];
-    bool toExternal = _screenIdx == 0 && _screenIdx != screenIdx;
+    bool toExternal = false;
+
+    // current screen is main screen and new screen
+    // is different
+    if (_screenIdx == 0 && _screenIdx != screenIdx)
+      toExternal = true;
+
+    // current screen is not main screen
+    // and new screen is the same as current
+    // this means we are external already but
+    // for example resolution gets changed
+    // treat this as toExternal for proper rotation...
+    if (_screenIdx != 0 && _screenIdx == screenIdx)
+      toExternal = true;
 
     //set new screen mode
     [newScreen setCurrentMode:mode];
@@ -95,10 +107,20 @@ static CEvent screenChangeEvent;
     if (toExternal)
     {
       // portrait on external screen means its landscape for xbmc
-      [g_xbmcController activateScreen:newScreen withOrientation:UIInterfaceOrientationPortrait];// will attach the screen to xbmc mainwindow
+#if __IPHONE_8_0
+      if (CDarwinUtils::GetIOSVersion() >= 8.0 && CDarwinUtils::GetIOSVersion() < 9.0)
+        [g_xbmcController activateScreen:newScreen withOrientation:UIInterfaceOrientationLandscapeLeft];// will attach the screen to xbmc mainwindow
+      else
+#endif
+        [g_xbmcController activateScreen:newScreen withOrientation:UIInterfaceOrientationPortrait];// will attach the screen to xbmc mainwindow
     }
     else
     {
+#if __IPHONE_8_0
+      if (CDarwinUtils::GetIOSVersion() >= 8.0)
+        [g_xbmcController activateScreen:newScreen withOrientation:UIInterfaceOrientationPortrait];// will attach the screen to xbmc mainwindow
+      else
+#endif
       // switching back to internal - use same orientation as we used for the touch controller
       [g_xbmcController activateScreen:newScreen withOrientation:_lastTouchControllerOrientation];// will attach the screen to xbmc mainwindow
     }
@@ -234,23 +256,18 @@ static CEvent screenChangeEvent;
 + (CGRect) getLandscapeResolution:(UIScreen *)screen
 {
   CGRect res = [screen bounds];
-#ifdef TARGET_DARWIN_IOS_ATV2
-  //because bounds returns f00bar on atv2 - we return the preferred resolution (which mostly is the
-  //right resolution
-#if __IPHONE_OS_VERSION_MIN_REQUIRED > __IPHONE_4_2
-  res.size = screen.preferredMode.size;
-#else
-  Class brwin = objc_getClass("BRWindow");
-  res.size = [brwin interfaceFrame].size;
-#endif
-#else
-  //main screen is in portrait mode (physically) so exchange height and width
-  if(screen == [UIScreen mainScreen])
+  #if __IPHONE_8_0
+  if (CDarwinUtils::GetIOSVersion() < 8.0)
+  #endif
   {
-    CGRect frame = res;
-    res.size = CGSizeMake(frame.size.height, frame.size.width);
+    //main screen is in portrait mode (physically) so exchange height and width
+    //at least when compiled with ios sdk < 8.0 (seems to be fixed in later sdks)
+    if(screen == [UIScreen mainScreen])
+    {
+      CGRect frame = res;
+      res.size = CGSizeMake(frame.size.height, frame.size.width);
+    }
   }
-#endif
   return res;
 }
 //--------------------------------------------------------------
@@ -260,7 +277,7 @@ static CEvent screenChangeEvent;
   //change back to internal screen
   if([[UIScreen screens] count] == 1 && _screenIdx != 0)
   {
-    RESOLUTION_INFO res = CDisplaySettings::Get().GetResolutionInfo(RES_DESKTOP);//internal screen default res
+    RESOLUTION_INFO res = CDisplaySettings::GetInstance().GetResolutionInfo(RES_DESKTOP);//internal screen default res
     g_Windowing.SetFullScreen(true, res, false);
   }
 }

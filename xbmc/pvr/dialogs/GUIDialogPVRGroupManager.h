@@ -21,7 +21,8 @@
 
 #include "guilib/GUIDialog.h"
 #include "view/GUIViewControl.h"
-#include "../channels/PVRChannelGroup.h"
+
+#include "pvr/channels/PVRChannelGroup.h"
 
 class CFileItemList;
 
@@ -54,6 +55,7 @@ namespace PVR
     bool ActionButtonUngroupedChannels(CGUIMessage &message);
     bool ActionButtonGroupMembers(CGUIMessage &message);
     bool ActionButtonChannelGroups(CGUIMessage &message);
+    bool ActionButtonHideGroup(CGUIMessage &message);
     bool OnMessageClick(CGUIMessage &message);
 
     CPVRChannelGroupPtr m_selectedGroup;

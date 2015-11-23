@@ -36,6 +36,7 @@
 #endif
 
 
+#include <string>
 #include <vector>
 #include <stack>
 #include <map>
@@ -43,7 +44,6 @@
 #include "TransformMatrix.h"        // for the members m_guiTransform etc.
 #include "Geometry.h"               // for CRect/CPoint
 #include "gui3d.h"
-#include "utils/StdString.h"
 #include "Resolution.h"
 #include "utils/GlobalsHandling.h"
 #include "DirtyRegion.h"
@@ -78,7 +78,7 @@ public:
   CGraphicContext(void);
   virtual ~CGraphicContext(void);
 
-  virtual void OnSettingChanged(const CSetting *setting);
+  virtual void OnSettingChanged(const CSetting *setting) override;
 
   // the following two functions should wrap any
   // GL calls to maintain thread safety
@@ -88,8 +88,8 @@ public:
   int GetWidth() const { return m_iScreenWidth; }
   int GetHeight() const { return m_iScreenHeight; }
   float GetFPS() const;
-  const CStdString& GetMediaDir() const { return m_strMediaDir; }
-  void SetMediaDir(const CStdString& strMediaDir);
+  const std::string& GetMediaDir() const { return m_strMediaDir; }
+  void SetMediaDir(const std::string& strMediaDir);
   bool SetViewPort(float fx, float fy , float fwidth, float fheight, bool intersectPrevious = false);
   void RestoreViewPort();
 
@@ -146,6 +146,7 @@ public:
   inline void ScaleFinalCoords(float &x, float &y, float &z) const XBMC_FORCE_INLINE { m_finalTransform.matrix.TransformPosition(x, y, z); }
   bool RectIsAngled(float x1, float y1, float x2, float y2) const;
 
+  inline const TransformMatrix &GetGUIMatrix() const XBMC_FORCE_INLINE { return m_finalTransform.matrix; }
   inline float GetGUIScaleX() const XBMC_FORCE_INLINE { return m_finalTransform.scaleX; }
   inline float GetGUIScaleY() const XBMC_FORCE_INLINE { return m_finalTransform.scaleY; }
   inline color_t MergeAlpha(color_t color) const XBMC_FORCE_INLINE
@@ -163,6 +164,8 @@ public:
   void SetStereoMode(RENDER_STEREO_MODE mode) { m_nextStereoMode = mode; }
   RENDER_STEREO_MODE GetStereoMode()  { return m_stereoMode; }
   void RestoreCameraPosition();
+  void SetStereoFactor(float factor);
+  void RestoreStereoFactor();
   /*! \brief Set a region in which to clip all rendering
    Anything that is rendered after setting a clip region will be clipped so that no part renders
    outside of the clip region.  Successive calls to SetClipRegion intersect the clip region, which
@@ -198,6 +201,7 @@ public:
   void ApplyHardwareTransform();
   void RestoreHardwareTransform();
   void ClipRect(CRect &vertex, CRect &texture, CRect *diffuse = NULL);
+  CRect GetClipRegion();
   inline void AddGUITransform()
   {
     m_transforms.push(m_finalTransform);
@@ -236,18 +240,24 @@ public:
 
   CRect generateAABB(const CRect &rect) const;
 
+  /*! \brief sets refresh rate, overrides the one stored with modes
+   *  \param fps refresh rate
+   */
+  void SetFPS(float fps);
+
 protected:
   std::stack<CRect> m_viewStack;
 
   int m_iScreenHeight;
   int m_iScreenWidth;
   int m_iScreenId;
-  CStdString m_strMediaDir;
+  std::string m_strMediaDir;
   CRect m_videoRect;
   bool m_bFullScreenRoot;
   bool m_bFullScreenVideo;
   bool m_bCalibrating;
   RESOLUTION m_Resolution;
+  float m_fFPSOverride;
 
 private:
   class UITransform
@@ -261,11 +271,15 @@ private:
     float scaleX;
     float scaleY;
   };
-  void UpdateCameraPosition(const CPoint &camera);
+  void UpdateCameraPosition(const CPoint &camera, const float &factor);
+  // this method is indirectly called by the public SetVideoResolution
+  // it only works when called from mainthread (thats what SetVideoResolution ensures)
+  void SetVideoResolutionInternal(RESOLUTION res, bool forceUpdate);
   RESOLUTION_INFO m_windowResolution;
   std::stack<CPoint> m_cameras;
   std::stack<CPoint> m_origins;
   std::stack<CRect>  m_clipRegions;
+  std::stack<float>  m_stereoFactors;
 
   UITransform m_guiTransform;
   UITransform m_finalTransform;
@@ -282,6 +296,6 @@ private:
  \brief
  */
 
-XBMC_GLOBAL(CGraphicContext,g_graphicsContext);
-
+XBMC_GLOBAL_REF(CGraphicContext,g_graphicsContext);
+#define g_graphicsContext XBMC_GLOBAL_USE(CGraphicContext)
 #endif

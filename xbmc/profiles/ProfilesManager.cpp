@@ -18,15 +18,19 @@
  *
  */
 
+#include <algorithm>
+#include <string>
+#include <vector>
+
 #include "system.h"
 #include "ProfilesManager.h"
 #include "Application.h"
 #include "DatabaseManager.h"
 #include "FileItem.h"
 #include "GUIInfoManager.h"
-#include "LangInfo.h"
 #include "PasswordManager.h"
 #include "Util.h"
+#include "dialogs/GUIDialogOK.h"
 #include "dialogs/GUIDialogYesNo.h"
 #include "filesystem/Directory.h"
 #include "filesystem/DirectoryCache.h"
@@ -35,17 +39,17 @@
 #include "guilib/GUIWindowManager.h"
 #include "guilib/LocalizeStrings.h"
 #include "input/ButtonTranslator.h"
-#include "input/MouseStat.h"
+#include "input/InputManager.h"
 #include "settings/Settings.h"
 #if !defined(TARGET_WINDOWS) && defined(HAS_DVD_DRIVE)
 #include "storage/DetectDVDType.h"
 #endif
 #include "threads/SingleLock.h"
-#include "utils/CharsetConverter.h"
 #include "utils/FileUtils.h"
 #include "utils/log.h"
 #include "utils/StringUtils.h"
 #include "utils/URIUtils.h"
+#include "utils/Variant.h"
 #include "utils/XMLUtils.h"
 
 // TODO
@@ -61,7 +65,6 @@
 #define XML_NEXTID        "nextIdProfile"
 #define XML_PROFILE       "profile"
 
-using namespace std;
 using namespace XFILE;
 
 static CProfile EmptyProfile;
@@ -74,7 +77,7 @@ CProfilesManager::CProfilesManager()
 CProfilesManager::~CProfilesManager()
 { }
 
-CProfilesManager& CProfilesManager::Get()
+CProfilesManager& CProfilesManager::GetInstance()
 {
   static CProfilesManager sProfilesManager;
   return sProfilesManager;
@@ -83,11 +86,11 @@ CProfilesManager& CProfilesManager::Get()
 void CProfilesManager::OnSettingsLoaded()
 {
   // check them all
-  string strDir = CSettings::Get().GetString("system.playlistspath");
+  std::string strDir = CSettings::GetInstance().GetString(CSettings::SETTING_SYSTEM_PLAYLISTSPATH);
   if (strDir == "set default" || strDir.empty())
   {
     strDir = "special://profile/playlists/";
-    CSettings::Get().SetString("system.playlistspath", strDir.c_str());
+    CSettings::GetInstance().SetString(CSettings::SETTING_SYSTEM_PLAYLISTSPATH, strDir.c_str());
   }
 
   CDirectory::Create(strDir);
@@ -96,7 +99,7 @@ void CProfilesManager::OnSettingsLoaded()
   CDirectory::Create(URIUtils::AddFileToFolder(strDir,"mixed"));
 }
 
-void CProfilesManager::OnSettingsSaved()
+void CProfilesManager::OnSettingsSaved() const
 {
   // save mastercode
   Save();
@@ -133,7 +136,7 @@ bool CProfilesManager::Load(const std::string &file)
         XMLUtils::GetInt(rootElement, XML_AUTO_LOGIN, m_autoLoginProfile);
         XMLUtils::GetInt(rootElement, XML_NEXTID, m_nextProfileId);
         
-        CStdString defaultDir("special://home/userdata");
+        std::string defaultDir("special://home/userdata");
         if (!CDirectory::Exists(defaultDir))
           defaultDir = "special://xbmc/userdata";
         
@@ -186,7 +189,7 @@ bool CProfilesManager::Load(const std::string &file)
   return ret;
 }
 
-bool CProfilesManager::Save()
+bool CProfilesManager::Save() const
 {
   return Save(PROFILES_FILE);
 }
@@ -206,7 +209,7 @@ bool CProfilesManager::Save(const std::string &file) const
   XMLUtils::SetInt(pRoot, XML_AUTO_LOGIN, m_autoLoginProfile);
   XMLUtils::SetInt(pRoot, XML_NEXTID, m_nextProfileId);      
 
-  for (vector<CProfile>::const_iterator profile = m_profiles.begin(); profile != m_profiles.end(); profile++)
+  for (std::vector<CProfile>::const_iterator profile = m_profiles.begin(); profile != m_profiles.end(); ++profile)
     profile->Save(pRoot);
 
   // save the file
@@ -235,48 +238,35 @@ bool CProfilesManager::LoadProfile(size_t index)
     return true;
 
   // unload any old settings
-  CSettings::Get().Unload();
+  CSettings::GetInstance().Unload();
 
   SetCurrentProfileId(index);
 
   // load the new settings
-  if (!CSettings::Get().Load())
+  if (!CSettings::GetInstance().Load())
   {
     CLog::Log(LOGFATAL, "CProfilesManager: unable to load settings for profile \"%s\"", m_profiles.at(index).getName().c_str());
     return false;
   }
-  CSettings::Get().SetLoaded();
+  CSettings::GetInstance().SetLoaded();
 
   CreateProfileFolders();
 
-  // Load the langinfo to have user charset <-> utf-8 conversion
-  string strLanguage = CSettings::Get().GetString("locale.language");
-  strLanguage[0] = toupper(strLanguage[0]);
-
-  string strLangInfoPath = StringUtils::Format("special://xbmc/language/%s/langinfo.xml", strLanguage.c_str());
-  CLog::Log(LOGINFO, "CProfilesManager: load language info file: %s", strLangInfoPath.c_str());
-  g_langInfo.Load(strLangInfoPath);
-
+  CDatabaseManager::GetInstance().Initialize();
   CButtonTranslator::GetInstance().Load(true);
-  g_localizeStrings.Load("special://xbmc/language/", strLanguage);
 
-  CDatabaseManager::Get().Initialize();
-
-  g_Mouse.SetEnabled(CSettings::Get().GetBool("input.enablemouse"));
+  CInputManager::GetInstance().SetMouseEnabled(CSettings::GetInstance().GetBool(CSettings::SETTING_INPUT_ENABLEMOUSE));
 
   g_infoManager.ResetCache();
   g_infoManager.ResetLibraryBools();
-
-  // always reload the skin - we need it for the new language strings
-  g_application.ReloadSkin();
 
   if (m_currentProfile != 0)
   {
     CXBMCTinyXML doc;
     if (doc.LoadFile(URIUtils::AddFileToFolder(GetUserDataFolder(), "guisettings.xml")))
     {
-      CSettings::Get().LoadSetting(doc.RootElement(), "masterlock.maxretries");
-      CSettings::Get().LoadSetting(doc.RootElement(), "masterlock.startuplock");
+      CSettings::GetInstance().LoadSetting(doc.RootElement(), CSettings::SETTING_MASTERLOCK_MAXRETRIES);
+      CSettings::GetInstance().LoadSetting(doc.RootElement(), CSettings::SETTING_MASTERLOCK_STARTUPLOCK);
     }
   }
 
@@ -308,14 +298,12 @@ bool CProfilesManager::DeleteProfile(size_t index)
   if (dlgYesNo == NULL)
     return false;
 
-  string message;
-  string str = g_localizeStrings.Get(13201);
-  message = StringUtils::Format(str.c_str(), profile->getName().c_str());
-  dlgYesNo->SetHeading(13200);
-  dlgYesNo->SetLine(0, message);
-  dlgYesNo->SetLine(1, "");
-  dlgYesNo->SetLine(2, "");
-  dlgYesNo->DoModal();
+  std::string str = g_localizeStrings.Get(13201);
+  dlgYesNo->SetHeading(CVariant{13200});
+  dlgYesNo->SetLine(0, CVariant{StringUtils::Format(str.c_str(), profile->getName().c_str())});
+  dlgYesNo->SetLine(1, CVariant{""});
+  dlgYesNo->SetLine(2, CVariant{""});
+  dlgYesNo->Open();
 
   if (!dlgYesNo->IsConfirmed())
     return false;
@@ -325,14 +313,14 @@ bool CProfilesManager::DeleteProfile(size_t index)
     m_autoLoginProfile = 0;
 
   // delete profile
-  string strDirectory = profile->getDirectory();
+  std::string strDirectory = profile->getDirectory();
   m_profiles.erase(m_profiles.begin() + index);
 
   // fall back to master profile if necessary
   if (index == m_currentProfile)
   {
     LoadProfile(0);
-    CSettings::Get().Save();
+    CSettings::GetInstance().Save();
   }
 
   CFileItemPtr item = CFileItemPtr(new CFileItem(URIUtils::AddFileToFolder(GetUserDataFolder(), strDirectory)));
@@ -355,7 +343,7 @@ void CProfilesManager::CreateProfileFolders()
   CDirectory::Create(GetVideoThumbFolder());
   CDirectory::Create(GetBookmarksThumbFolder());
   for (size_t hex = 0; hex < 16; hex++)
-    CDirectory::Create(URIUtils::AddFileToFolder(GetThumbnailsFolder(), StringUtils::Format("%x", hex)));
+    CDirectory::Create(URIUtils::AddFileToFolder(GetThumbnailsFolder(), StringUtils::Format("%lx", hex)));
 
   CDirectory::Create("special://profile/addon_data");
   CDirectory::Create("special://profile/keymaps");
@@ -416,7 +404,7 @@ void CProfilesManager::AddProfile(const CProfile &profile)
   CSingleLock lock(m_critical);
   // data integrity check - covers off migration from old profiles.xml,
   // incrementing of the m_nextIdProfile,and bad data coming in
-  m_nextProfileId = max(m_nextProfileId, profile.getId() + 1);
+  m_nextProfileId = std::max(m_nextProfileId, profile.getId() + 1);
 
   m_profiles.push_back(profile);
 }
@@ -502,7 +490,7 @@ std::string CProfilesManager::GetLibraryFolder() const
 
 std::string CProfilesManager::GetSettingsFile() const
 {
-  CStdString settings;
+  std::string settings;
   if (m_currentProfile == 0)
     return "special://masterprofile/guisettings.xml";
 

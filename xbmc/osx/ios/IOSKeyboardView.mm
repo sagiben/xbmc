@@ -22,6 +22,7 @@
 #include "guilib/GUIKeyboardFactory.h"
 #include "threads/Event.h"
 #include "Application.h"
+#include "osx/DarwinUtils.h"
 #undef BOOL
 
 #import "IOSKeyboardView.h"
@@ -47,7 +48,6 @@ static CEvent keyboardFinishedEvent;
   {
     _iosKeyboard = nil;
     _keyboardIsShowing = 0;
-    _kbHeight = 0;
     _confirmed = NO;
     _canceled = NULL;
     _deactivated = NO;
@@ -93,6 +93,10 @@ static CEvent keyboardFinishedEvent;
                                                  name:UIKeyboardDidHideNotification
                                                object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(keyboardDidChangeFrame:)
+                                                 name:UIKeyboardDidChangeFrameNotification 
+                                               object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(keyboardWillShow:)
                                                  name:UIKeyboardWillShowNotification
                                                object:nil];
@@ -112,9 +116,19 @@ static CEvent keyboardFinishedEvent;
     CGSize headingSize = [_heading.text sizeWithFont:[UIFont systemFontOfSize:[UIFont systemFontSize]]];
     headingW = MIN(self.bounds.size.width/2, headingSize.width+30);
   }
-  CGFloat y = _kbHeight <= 0 ? 
+  CGFloat kbHeight = _kbRect.size.width;
+#if __IPHONE_8_0
+  if (CDarwinUtils::GetIOSVersion() >= 8.0)
+    kbHeight =_kbRect.size.height;
+#endif
+
+  CGFloat y = kbHeight <= 0 ?
     _textField.frame.origin.y : 
-    MIN(self.bounds.size.height-_kbHeight, self.bounds.size.height/5*3) - INPUT_BOX_HEIGHT - SPACE_BETWEEN_INPUT_AND_KEYBOARD;
+    MIN(self.bounds.size.height - kbHeight, self.bounds.size.height/5*3) - INPUT_BOX_HEIGHT - SPACE_BETWEEN_INPUT_AND_KEYBOARD;
+
+  if (CDarwinUtils::GetIOSVersion() >= 8.0)
+    y = _kbRect.origin.y - INPUT_BOX_HEIGHT - SPACE_BETWEEN_INPUT_AND_KEYBOARD;
+
   _heading.frame = CGRectMake(0, y, headingW, INPUT_BOX_HEIGHT);
   _textField.frame = CGRectMake(headingW, y, self.bounds.size.width-headingW, INPUT_BOX_HEIGHT);
 }
@@ -122,8 +136,12 @@ static CEvent keyboardFinishedEvent;
 -(void)keyboardWillShow:(NSNotification *) notification{
   NSDictionary* info = [notification userInfo];
   CGRect kbRect = [[info objectForKey:UIKeyboardFrameEndUserInfoKey] CGRectValue];
+#if !__IPHONE_8_0
+  if (CDarwinUtils::GetIOSVersion() >= 8.0)
+    kbRect = [self convertRect:kbRect fromView:nil];
+#endif
   LOG(@"keyboardWillShow: keyboard frame: %@", NSStringFromCGRect(kbRect));
-  _kbHeight = kbRect.size.width;
+  _kbRect = kbRect;
   [self setNeedsLayout];
   _keyboardIsShowing = 1;
 }
@@ -160,6 +178,34 @@ static CEvent keyboardFinishedEvent;
   _confirmed = YES;
   [_textField resignFirstResponder];
   return YES;
+}
+
+- (void)keyboardDidChangeFrame:(id)sender
+{
+#if __IPHONE_8_0
+  // when compiled against ios 8.x sdk and runtime is ios
+  // 5.1.1 (f.e. ipad1 which has 5.1.1 as latest available ios version)
+  // there is an incompatibility which somehowe prevents us from getting
+  // notified about "keyboardDidHide". This makes the keyboard
+  // useless on those ios platforms.
+  // Instead we are called here with "DidChangeFrame" and
+  // and an invalid frame set (height, width == 0 and pos is inf).
+  // Lets detect this situation and treat this as "keyboard was hidden"
+  // message
+  if (CDarwinUtils::GetIOSVersion() < 6.0)
+  {
+    PRINT_SIGNATURE();
+
+    NSDictionary* info = [sender userInfo];
+    CGRect kbRect = [[info objectForKey:UIKeyboardFrameEndUserInfoKey] CGRectValue];
+//    LOG(@"keyboardWillShow: keyboard frame: %f %f %f %f", kbRect.origin.x, kbRect.origin.y, kbRect.size.width, kbRect.size.height);
+    if (kbRect.size.height == 0)
+    {
+      LOG(@"keyboardDidChangeFrame: working around missing keyboardDidHide Message on iOS 5.x");
+      [self keyboardDidHide:sender];
+    }
+  }
+#endif
 }
 
 - (void)keyboardDidHide:(id)sender

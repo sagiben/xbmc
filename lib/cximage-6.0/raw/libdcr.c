@@ -920,6 +920,8 @@ void DCR_CLASS dcr_lossless_jpeg_load_raw(DCRAW* p)
 			}
 			if (p->raw_width == 3984 && (col -= 2) < 0)
 				col += (row--,p->raw_width);
+			if (row > p->raw_height)
+				longjmp (p->failure, 3);
 			if ((unsigned) (row-p->top_margin) < p->height) {
 				if ((unsigned) (col-p->left_margin) < p->width) {
 					BAYER(row-p->top_margin,col-p->left_margin) = val;
@@ -929,8 +931,6 @@ void DCR_CLASS dcr_lossless_jpeg_load_raw(DCRAW* p)
 			}
 			if (++col >= p->raw_width)
 				col = (row++,0);
-			if (row >= p->raw_height)
-				longjmp (p->failure, 3);
 		}
 	}
 	free (jh.row);
@@ -2471,8 +2471,12 @@ void DCR_CLASS dcr_sony_decrypt (DCRAW *p, unsigned *data, int len, int start, i
 		for (p->sony_decrypt_p=0; p->sony_decrypt_p < 127; p->sony_decrypt_p++)
 			p->sony_decrypt_pad[p->sony_decrypt_p] = htonl(p->sony_decrypt_pad[p->sony_decrypt_p]);
 	}
-	while (len--)
-		*data++ ^= p->sony_decrypt_pad[p->sony_decrypt_p++ & 127] = p->sony_decrypt_pad[(p->sony_decrypt_p+1) & 127] ^ p->sony_decrypt_pad[(p->sony_decrypt_p+65) & 127];
+	while (len--) {
+		p->sony_decrypt_pad[p->sony_decrypt_p & 127] = p->sony_decrypt_pad[(p->sony_decrypt_p+1) & 127] ^ p->sony_decrypt_pad[(p->sony_decrypt_p+65) & 127];
+		*data ^= p->sony_decrypt_pad[p->sony_decrypt_p & 127];
+		data++;
+		p->sony_decrypt_p++;
+	}
 }
 
 void DCR_CLASS dcr_sony_load_raw(DCRAW* p)

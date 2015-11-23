@@ -20,10 +20,6 @@
 
 /*Class for managing the UIScreens/resolutions of an iOS device*/
 
-#ifdef TARGET_DARWIN_IOS_ATV2
-#import <BackRow/BackRow.h>
-#else
-#endif
 #import <UIKit/UIKit.h>
 
 @class IOSEAGLView;
@@ -38,7 +34,7 @@
   IOSExternalTouchController *_externalTouchController;
   UIInterfaceOrientation _lastTouchControllerOrientation;
 }
-@property unsigned int  _screenIdx;
+@property (readonly, getter=GetScreenIdx)unsigned int  _screenIdx;
 @property (readonly, getter=isExternalScreen)bool _externalScreen;
 @property (assign, setter=setView:) IOSEAGLView *_glView;
 @property UIInterfaceOrientation _lastTouchControllerOrientation;

@@ -37,11 +37,10 @@
 #include "VideoShaders/YUV2RGBShader.h"
 #include "VideoShaders/VideoFilterShader.h"
 #include "windowing/WindowingFactory.h"
-#include "dialogs/GUIDialogKaiToast.h"
 #include "guilib/Texture.h"
 #include "guilib/LocalizeStrings.h"
+#include "guilib/MatrixGLES.h"
 #include "threads/SingleLock.h"
-#include "DllSwScale.h"
 #include "utils/log.h"
 #include "utils/GLUtils.h"
 #include "utils/StringUtils.h"
@@ -49,23 +48,17 @@
 #include "RenderFormats.h"
 #include "cores/IPlayer.h"
 #include "cores/dvdplayer/DVDCodecs/DVDCodecUtils.h"
+#include "cores/FFmpeg.h"
+
+extern "C" {
+#include "libswscale/swscale.h"
+}
 
 #ifdef HAVE_LIBVDPAU
 #include "cores/dvdplayer/DVDCodecs/Video/VDPAU.h"
 #endif
 #ifdef HAVE_LIBVA
-#include <va/va.h>
-#include <va/va_x11.h>
-#include <va/va_glx.h>
 #include "cores/dvdplayer/DVDCodecs/Video/VAAPI.h"
-
-#define USE_VAAPI_GLX_BIND                                \
-    (VA_MAJOR_VERSION == 0 &&                             \
-     ((VA_MINOR_VERSION == 30 &&                          \
-       VA_MICRO_VERSION == 4 && VA_SDS_VERSION >= 5) ||   \
-      (VA_MINOR_VERSION == 31 &&                          \
-       VA_MICRO_VERSION == 0 && VA_SDS_VERSION < 5)))
-
 #endif
 
 #ifdef TARGET_DARWIN
@@ -75,10 +68,6 @@
   #ifdef TARGET_DARWIN_OSX
     #include "osx/DarwinUtils.h"
   #endif
-#endif
-
-#ifdef HAS_GLX
-#include <GL/glx.h>
 #endif
 
 //due to a bug on osx nvidia, using gltexsubimage2d with a pbo bound and a null pointer
@@ -125,9 +114,6 @@ static const GLubyte stipple_weave[] = {
 };
 
 CLinuxRendererGL::YUVBUFFER::YUVBUFFER()
-#ifdef HAVE_LIBVA
- : vaapi(*(new VAAPI::CHolder()))
-#endif
 {
   memset(&fields, 0, sizeof(fields));
   memset(&image , 0, sizeof(image));
@@ -136,6 +122,9 @@ CLinuxRendererGL::YUVBUFFER::YUVBUFFER()
 #ifdef HAVE_LIBVDPAU
   vdpau = NULL;
 #endif
+#ifdef HAVE_LIBVA
+  vaapi = NULL;
+#endif
 #ifdef TARGET_DARWIN_OSX
   cvBufferRef = NULL;
 #endif
@@ -143,9 +132,6 @@ CLinuxRendererGL::YUVBUFFER::YUVBUFFER()
 
 CLinuxRendererGL::YUVBUFFER::~YUVBUFFER()
 {
-#ifdef HAVE_LIBVA
-  delete &vaapi;
-#endif
 #ifdef TARGET_DARWIN_OSX
   if (cvBufferRef)
     CVBufferRelease(cvBufferRef);
@@ -192,8 +178,6 @@ CLinuxRendererGL::CLinuxRendererGL()
   m_nonLinStretch = false;
   m_nonLinStretchGui = false;
   m_pixelRatio = 0.0f;
-
-  m_dllSwScale = new DllSwScale;
 }
 
 CLinuxRendererGL::~CLinuxRendererGL()
@@ -214,7 +198,7 @@ CLinuxRendererGL::~CLinuxRendererGL()
 
   if (m_context)
   {
-    m_dllSwScale->sws_freeContext(m_context);
+    sws_freeContext(m_context);
     m_context = NULL;
   }
 
@@ -224,8 +208,6 @@ CLinuxRendererGL::~CLinuxRendererGL()
     delete m_pYUVShader;
     m_pYUVShader = NULL;
   }
-
-  delete m_dllSwScale;
 }
 
 bool CLinuxRendererGL::ValidateRenderer()
@@ -301,7 +283,7 @@ bool CLinuxRendererGL::Configure(unsigned int width, unsigned int height, unsign
   // Calculate the input frame aspect ratio.
   CalculateFrameAspectRatio(d_width, d_height);
   ChooseBestResolution(fps);
-  SetViewMode(CMediaSettings::Get().GetCurrentVideoSettings().m_ViewMode);
+  SetViewMode(CMediaSettings::GetInstance().GetCurrentVideoSettings().m_ViewMode);
   ManageDisplay();
 
   m_bConfigured = true;
@@ -321,13 +303,13 @@ bool CLinuxRendererGL::Configure(unsigned int width, unsigned int height, unsign
   m_nonLinStretchGui = false;
   m_pixelRatio       = 1.0;
 
-  m_pboSupported = glewIsSupported("GL_ARB_pixel_buffer_object") && CSettings::Get().GetBool("videoplayer.usepbo");
+  m_pboSupported = glewIsSupported("GL_ARB_pixel_buffer_object");
 
 #ifdef TARGET_DARWIN_OSX
   // on osx 10.9 mavericks we get a strange ripple
   // effect when rendering with pbo
   // when used on intel gpu - we have to quirk it here
-  if (DarwinIsMavericks())
+  if (CDarwinUtils::IsMavericks())
   {
     std::string rendervendor = g_Windowing.GetRenderVendor();
     StringUtils::ToLower(rendervendor);
@@ -574,7 +556,7 @@ void CLinuxRendererGL::ReleaseBuffer(int idx)
   SAFE_RELEASE(buf.vdpau);
 #endif
 #ifdef HAVE_LIBVA
-  buf.vaapi.surface.reset();
+  SAFE_RELEASE(buf.vaapi);
 #endif
 #ifdef TARGET_DARWIN
   if (buf.cvBufferRef)
@@ -737,7 +719,7 @@ unsigned int CLinuxRendererGL::PreInit()
   m_bConfigured = false;
   m_bValidated = false;
   UnInit();
-  m_resolution = CDisplaySettings::Get().GetCurrentResolution();
+  m_resolution = CDisplaySettings::GetInstance().GetCurrentResolution();
   if ( m_resolution == RES_WINDOW )
     m_resolution = RES_DESKTOP;
 
@@ -780,21 +762,18 @@ unsigned int CLinuxRendererGL::PreInit()
   // setup the background colour
   m_clearColour = (float)(g_advancedSettings.m_videoBlackBarColour & 0xff) / 0xff;
 
-  if (!m_dllSwScale->Load())
-    CLog::Log(LOGERROR,"CLinuxRendererGL::PreInit - failed to load rescale libraries!");
-
   return true;
 }
 
 void CLinuxRendererGL::UpdateVideoFilter()
 {
-  bool pixelRatioChanged    = (CDisplaySettings::Get().GetPixelRatio() > 1.001f || CDisplaySettings::Get().GetPixelRatio() < 0.999f) !=
+  bool pixelRatioChanged    = (CDisplaySettings::GetInstance().GetPixelRatio() > 1.001f || CDisplaySettings::GetInstance().GetPixelRatio() < 0.999f) !=
                               (m_pixelRatio > 1.001f || m_pixelRatio < 0.999f);
   bool nonLinStretchChanged = false;
-  if (m_nonLinStretchGui != CDisplaySettings::Get().IsNonLinearStretched() || pixelRatioChanged)
+  if (m_nonLinStretchGui != CDisplaySettings::GetInstance().IsNonLinearStretched() || pixelRatioChanged)
   {
-    m_nonLinStretchGui   = CDisplaySettings::Get().IsNonLinearStretched();
-    m_pixelRatio         = CDisplaySettings::Get().GetPixelRatio();
+    m_nonLinStretchGui   = CDisplaySettings::GetInstance().IsNonLinearStretched();
+    m_pixelRatio         = CDisplaySettings::GetInstance().GetPixelRatio();
     m_reloadShaders      = 1;
     nonLinStretchChanged = true;
 
@@ -810,7 +789,7 @@ void CLinuxRendererGL::UpdateVideoFilter()
     }
   }
 
-  if (m_scalingMethodGui == CMediaSettings::Get().GetCurrentVideoSettings().m_ScalingMethod && !nonLinStretchChanged)
+  if (m_scalingMethodGui == CMediaSettings::GetInstance().GetCurrentVideoSettings().m_ScalingMethod && !nonLinStretchChanged)
     return;
 
   //recompile YUV shader when non-linear stretch is turned on/off
@@ -818,7 +797,7 @@ void CLinuxRendererGL::UpdateVideoFilter()
   if (m_nonLinStretch || nonLinStretchChanged)
     m_reloadShaders = 1;
 
-  m_scalingMethodGui = CMediaSettings::Get().GetCurrentVideoSettings().m_ScalingMethod;
+  m_scalingMethodGui = CMediaSettings::GetInstance().GetCurrentVideoSettings().m_ScalingMethod;
   m_scalingMethod    = m_scalingMethodGui;
 
   if(!Supports(m_scalingMethod))
@@ -919,7 +898,6 @@ void CLinuxRendererGL::UpdateVideoFilter()
     break;
   }
 
-  CGUIDialogKaiToast::QueueNotification(CGUIDialogKaiToast::Error, g_localizeStrings.Get(34400), g_localizeStrings.Get(34401));
   CLog::Log(LOGERROR, "GL: Falling back to bilinear due to failure to init scaler");
   if (m_pVideoFilterShader)
   {
@@ -945,14 +923,9 @@ void CLinuxRendererGL::LoadShaders(int field)
     CLog::Log(LOGNOTICE, "GL: Using VAAPI render method");
     m_renderMethod = RENDER_VAAPI;
   }
-  else if (m_format == RENDER_FMT_CVBREF)
-  {
-    CLog::Log(LOGNOTICE, "GL: Using CVBREF render method");
-    m_renderMethod = RENDER_CVREF;
-  }
   else
   {
-    int requestedMethod = CSettings::Get().GetInt("videoplayer.rendermethod");
+    int requestedMethod = CSettings::GetInstance().GetInt(CSettings::SETTING_VIDEOPLAYER_RENDERMETHOD);
     CLog::Log(LOGDEBUG, "GL: Requested render method: %d", requestedMethod);
 
     if (m_pYUVShader)
@@ -1034,6 +1007,13 @@ void CLinuxRendererGL::LoadShaders(int field)
     }
   }
 
+  /* cvbref format piggy back on normal glsl */
+  if (m_format == RENDER_FMT_CVBREF)
+  {
+    CLog::Log(LOGNOTICE, "GL: Using CVBREF render method");
+    m_renderMethod |= RENDER_CVREF;
+  }
+
   // determine whether GPU supports NPOT textures
   if (!glewIsSupported("GL_ARB_texture_non_power_of_two"))
   {
@@ -1061,7 +1041,8 @@ void CLinuxRendererGL::LoadShaders(int field)
     m_pboUsed = false;
 
   // Now that we now the render method, setup texture function handlers
-  if (m_format == RENDER_FMT_NV12)
+  if (m_format == RENDER_FMT_NV12 ||
+      m_format == RENDER_FMT_VAAPINV12)
   {
     m_textureUpload = &CLinuxRendererGL::UploadNV12Texture;
     m_textureCreate = &CLinuxRendererGL::CreateNV12Texture;
@@ -1133,13 +1114,16 @@ void CLinuxRendererGL::UnInit()
 
   if (m_context)
   {
-    m_dllSwScale->sws_freeContext(m_context);
+    sws_freeContext(m_context);
     m_context = NULL;
   }
 
   // YV12 textures
   for (int i = 0; i < NUM_BUFFERS; ++i)
+  {
     (this->*m_textureDelete)(i);
+    DeleteVAAPITexture(i);
+  }
 
   // cleanup framebuffer object if it was in use
   m_fbo.fbo.Cleanup();
@@ -1198,19 +1182,18 @@ void CLinuxRendererGL::Render(DWORD flags, int renderBuffer)
   else if (m_renderMethod & RENDER_VDPAU)
   {
     UpdateVideoFilter();
-    RenderVDPAU(renderBuffer, m_currentField);
+    RenderRGB(renderBuffer, m_currentField);
   }
 #endif
 #ifdef HAVE_LIBVA
   else if (m_renderMethod & RENDER_VAAPI)
   {
     UpdateVideoFilter();
-    RenderVAAPI(renderBuffer, m_currentField);
+    RenderRGB(renderBuffer, m_currentField);
   }
 #endif
   else
   {
-    // RENDER_CVREF uses the same render as the default case
     RenderSoftware(renderBuffer, m_currentField);
     VerifyGLState();
   }
@@ -1222,6 +1205,16 @@ void CLinuxRendererGL::Render(DWORD flags, int renderBuffer)
     if (buf.vdpau)
     {
       buf.vdpau->Sync();
+    }
+  }
+#endif
+#ifdef HAVE_LIBVA
+  if (m_format == RENDER_FMT_VAAPI)
+  {
+    YUVBUFFER &buf = m_buffers[renderBuffer];
+    if (buf.vaapi)
+    {
+      buf.vaapi->Sync();
     }
   }
 #endif
@@ -1258,8 +1251,8 @@ void CLinuxRendererGL::RenderSinglePass(int index, int field)
   glActiveTextureARB(GL_TEXTURE0);
   VerifyGLState();
 
-  m_pYUVShader->SetBlack(CMediaSettings::Get().GetCurrentVideoSettings().m_Brightness * 0.01f - 0.5f);
-  m_pYUVShader->SetContrast(CMediaSettings::Get().GetCurrentVideoSettings().m_Contrast * 0.02f);
+  m_pYUVShader->SetBlack(CMediaSettings::GetInstance().GetCurrentVideoSettings().m_Brightness * 0.01f - 0.5f);
+  m_pYUVShader->SetContrast(CMediaSettings::GetInstance().GetCurrentVideoSettings().m_Contrast * 0.02f);
   m_pYUVShader->SetWidth(planes[0].texwidth);
   m_pYUVShader->SetHeight(planes[0].texheight);
 
@@ -1268,7 +1261,7 @@ void CLinuxRendererGL::RenderSinglePass(int index, int field)
   if (g_application.m_pPlayer->IsInMenu())
     m_pYUVShader->SetNonLinStretch(1.0);
   else
-    m_pYUVShader->SetNonLinStretch(pow(CDisplaySettings::Get().GetPixelRatio(), g_advancedSettings.m_videoNonLinStretchRatio));
+    m_pYUVShader->SetNonLinStretch(pow(CDisplaySettings::GetInstance().GetPixelRatio(), g_advancedSettings.m_videoNonLinStretchRatio));
 
   if     (field == FIELD_TOP)
     m_pYUVShader->SetField(1);
@@ -1377,8 +1370,8 @@ void CLinuxRendererGL::RenderToFBO(int index, int field, bool weave /*= false*/)
   m_fbo.fbo.BeginRender();
   VerifyGLState();
 
-  m_pYUVShader->SetBlack(CMediaSettings::Get().GetCurrentVideoSettings().m_Brightness * 0.01f - 0.5f);
-  m_pYUVShader->SetContrast(CMediaSettings::Get().GetCurrentVideoSettings().m_Contrast * 0.02f);
+  m_pYUVShader->SetBlack(CMediaSettings::GetInstance().GetCurrentVideoSettings().m_Brightness * 0.01f - 0.5f);
+  m_pYUVShader->SetContrast(CMediaSettings::GetInstance().GetCurrentVideoSettings().m_Contrast * 0.02f);
   m_pYUVShader->SetWidth(planes[0].texwidth);
   m_pYUVShader->SetHeight(planes[0].texheight);
   m_pYUVShader->SetNonLinStretch(1.0);
@@ -1391,21 +1384,18 @@ void CLinuxRendererGL::RenderToFBO(int index, int field, bool weave /*= false*/)
 
   glPushAttrib(GL_VIEWPORT_BIT);
   glPushAttrib(GL_SCISSOR_BIT);
-  glMatrixMode(GL_MODELVIEW);
-  glPushMatrix();
-  glLoadIdentity();
-  VerifyGLState();
 
-  glMatrixMode(GL_PROJECTION);
-  glPushMatrix();
-  glLoadIdentity();
-  VerifyGLState();
-  gluOrtho2D(0, m_sourceWidth, 0, m_sourceHeight);
+  glMatrixModview.Push();
+  glMatrixModview->LoadIdentity();
+  glMatrixModview.Load();
+
+  glMatrixProject.Push();
+  glMatrixProject->LoadIdentity();
+  glMatrixProject->Ortho2D(0, m_sourceWidth, 0, m_sourceHeight);
+  glMatrixProject.Load();
+
   glViewport(0, 0, m_sourceWidth, m_sourceHeight);
   glScissor (0, 0, m_sourceWidth, m_sourceHeight);
-  glMatrixMode(GL_MODELVIEW);
-  VerifyGLState();
-
 
   if (!m_pYUVShader->Enable())
   {
@@ -1452,13 +1442,11 @@ void CLinuxRendererGL::RenderToFBO(int index, int field, bool weave /*= false*/)
 
   m_pYUVShader->Disable();
 
-  glMatrixMode(GL_MODELVIEW);
-  glPopMatrix(); // pop modelview
-  glMatrixMode(GL_PROJECTION);
-  glPopMatrix(); // pop projection
+  glMatrixModview.PopLoad();
+  glMatrixProject.PopLoad();
+
   glPopAttrib(); // pop scissor
   glPopAttrib(); // pop viewport
-  glMatrixMode(GL_MODELVIEW);
   VerifyGLState();
 
   m_fbo.fbo.EndRender();
@@ -1473,7 +1461,7 @@ void CLinuxRendererGL::RenderToFBO(int index, int field, bool weave /*= false*/)
 
 void CLinuxRendererGL::RenderFromFBO()
 {
-  glEnable(m_textureTarget);
+  glEnable(GL_TEXTURE_2D);
   glActiveTextureARB(GL_TEXTURE0);
   VerifyGLState();
 
@@ -1487,7 +1475,7 @@ void CLinuxRendererGL::RenderFromFBO()
     if (!m_pVideoFilterShader->GetTextureFilter(filter))
       filter = m_scalingMethod == VS_SCALINGMETHOD_NEAREST ? GL_NEAREST : GL_LINEAR;
 
-    m_fbo.fbo.SetFiltering(m_textureTarget, filter);
+    m_fbo.fbo.SetFiltering(GL_TEXTURE_2D, filter);
     m_pVideoFilterShader->SetSourceTexture(0);
     m_pVideoFilterShader->SetWidth(m_sourceWidth);
     m_pVideoFilterShader->SetHeight(m_sourceHeight);
@@ -1497,14 +1485,14 @@ void CLinuxRendererGL::RenderFromFBO()
     if (g_application.m_pPlayer->IsInMenu())
       m_pVideoFilterShader->SetNonLinStretch(1.0);
     else
-      m_pVideoFilterShader->SetNonLinStretch(pow(CDisplaySettings::Get().GetPixelRatio(), g_advancedSettings.m_videoNonLinStretchRatio));
+      m_pVideoFilterShader->SetNonLinStretch(pow(CDisplaySettings::GetInstance().GetPixelRatio(), g_advancedSettings.m_videoNonLinStretchRatio));
 
     m_pVideoFilterShader->Enable();
   }
   else
   {
     GLint filter = m_scalingMethod == VS_SCALINGMETHOD_NEAREST ? GL_NEAREST : GL_LINEAR;
-    m_fbo.fbo.SetFiltering(m_textureTarget, filter);
+    m_fbo.fbo.SetFiltering(GL_TEXTURE_2D, filter);
     glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
   }
 
@@ -1536,8 +1524,8 @@ void CLinuxRendererGL::RenderFromFBO()
 
   VerifyGLState();
 
-  glBindTexture(m_textureTarget, 0);
-  glDisable(m_textureTarget);
+  glBindTexture(GL_TEXTURE_2D, 0);
+  glDisable(GL_TEXTURE_2D);
   VerifyGLState();
 }
 
@@ -1567,9 +1555,9 @@ void CLinuxRendererGL::RenderProgressiveWeave(int index, int field)
   }
 }
 
-void CLinuxRendererGL::RenderVDPAU(int index, int field)
+void CLinuxRendererGL::RenderRGB(int index, int field)
 {
-#ifdef HAVE_LIBVDPAU
+#if defined(HAVE_LIBVDPAU) || defined(HAVE_LIBVA)
   YUVPLANE &plane = m_buffers[index].fields[FIELD_FULL][0];
 
   glEnable(m_textureTarget);
@@ -1601,7 +1589,7 @@ void CLinuxRendererGL::RenderVDPAU(int index, int field)
     if (g_application.m_pPlayer->IsInMenu())
       m_pVideoFilterShader->SetNonLinStretch(1.0);
     else
-      m_pVideoFilterShader->SetNonLinStretch(pow(CDisplaySettings::Get().GetPixelRatio(), g_advancedSettings.m_videoNonLinStretchRatio));
+      m_pVideoFilterShader->SetNonLinStretch(pow(CDisplaySettings::GetInstance().GetPixelRatio(), g_advancedSettings.m_videoNonLinStretchRatio));
 
     m_pVideoFilterShader->Enable();
   }
@@ -1635,99 +1623,6 @@ void CLinuxRendererGL::RenderVDPAU(int index, int field)
 
   if (m_pVideoFilterShader)
     m_pVideoFilterShader->Disable();
-
-  glBindTexture (m_textureTarget, 0);
-  glDisable(m_textureTarget);
-#endif
-}
-
-void CLinuxRendererGL::RenderVAAPI(int index, int field)
-{
-#ifdef HAVE_LIBVA
-  YUVPLANE       &plane = m_buffers[index].fields[0][0];
-  VAAPI::CHolder &va    = m_buffers[index].vaapi;
-
-  if(!va.surface)
-  {
-    CLog::Log(LOGINFO, "CLinuxRendererGL::RenderVAAPI - no vaapi object");
-    return;
-  }
-  VAAPI::CDisplayPtr& display(va.surface->m_display);
-  CSingleLock lock(*display);
-
-  glEnable(m_textureTarget);
-  glActiveTextureARB(GL_TEXTURE0);
-  glBindTexture(m_textureTarget, plane.id);
-
-#if USE_VAAPI_GLX_BIND
-  VAStatus status;
-  status = vaBeginRenderSurfaceGLX(display->get(), va.surfglx->m_id);
-  if(status != VA_STATUS_SUCCESS)
-  {
-    CLog::Log(LOGERROR, "CLinuxRendererGL::RenderVAAPI - vaBeginRenderSurfaceGLX failed (%d)", status);
-    return;
-  }
-#endif
-
-  // make sure we know the correct texture size
-  GetPlaneTextureSize(plane);
-  CalculateTextureSourceRects(index, 1);
-
-  // Try some clamping or wrapping
-  glTexParameteri(m_textureTarget, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri(m_textureTarget, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-  if (m_pVideoFilterShader)
-  {
-    GLint filter;
-    if (!m_pVideoFilterShader->GetTextureFilter(filter))
-      filter = m_scalingMethod == VS_SCALINGMETHOD_NEAREST ? GL_NEAREST : GL_LINEAR;
-
-    glTexParameteri(m_textureTarget, GL_TEXTURE_MAG_FILTER, filter);
-    glTexParameteri(m_textureTarget, GL_TEXTURE_MIN_FILTER, filter);
-    m_pVideoFilterShader->SetSourceTexture(0);
-    m_pVideoFilterShader->SetWidth(m_sourceWidth);
-    m_pVideoFilterShader->SetHeight(m_sourceHeight);
-
-    //disable non-linear stretch when a dvd menu is shown, parts of the menu are rendered through the overlay renderer
-    //having non-linear stretch on breaks the alignment
-    if (g_application.m_pPlayer->IsInMenu())
-      m_pVideoFilterShader->SetNonLinStretch(1.0);
-    else
-      m_pVideoFilterShader->SetNonLinStretch(pow(CDisplaySettings::Get().GetPixelRatio(), g_advancedSettings.m_videoNonLinStretchRatio));
-
-    m_pVideoFilterShader->Enable();
-  }
-  else
-  {
-    GLint filter = m_scalingMethod == VS_SCALINGMETHOD_NEAREST ? GL_NEAREST : GL_LINEAR;
-    glTexParameteri(m_textureTarget, GL_TEXTURE_MAG_FILTER, filter);
-    glTexParameteri(m_textureTarget, GL_TEXTURE_MIN_FILTER, filter);
-  }
-
-  glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-  VerifyGLState();
-
-  glBegin(GL_QUADS);
-  glTexCoord2f(plane.rect.x1, plane.rect.y1);  glVertex2f(m_rotatedDestCoords[0].x, m_rotatedDestCoords[0].y);
-  glTexCoord2f(plane.rect.x2, plane.rect.y1);  glVertex2f(m_rotatedDestCoords[1].x, m_rotatedDestCoords[1].y);
-  glTexCoord2f(plane.rect.x2, plane.rect.y2);  glVertex2f(m_rotatedDestCoords[2].x, m_rotatedDestCoords[2].y);
-  glTexCoord2f(plane.rect.x1, plane.rect.y2);  glVertex2f(m_rotatedDestCoords[3].x, m_rotatedDestCoords[3].y);
-  glEnd();
-
-  VerifyGLState();
-
-  if (m_pVideoFilterShader)
-    m_pVideoFilterShader->Disable();
-
-#if USE_VAAPI_GLX_BIND
-  status = vaEndRenderSurfaceGLX(display->get(), va.surfglx->m_id);
-  if(status != VA_STATUS_SUCCESS)
-  {
-    CLog::Log(LOGERROR, "CLinuxRendererGL::RenderVAAPI - vaEndRenderSurfaceGLX failed (%d)", status);
-    return;
-  }
-#endif
 
   glBindTexture (m_textureTarget, 0);
   glDisable(m_textureTarget);
@@ -1785,10 +1680,11 @@ bool CLinuxRendererGL::RenderCapture(CRenderCapture* capture)
   //invert Y axis to get non-inverted image
   glDisable(GL_BLEND);
   glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-  glMatrixMode(GL_MODELVIEW);
-  glPushMatrix();
-  glTranslatef(0, capture->GetHeight(), 0);
-  glScalef(1.0, -1.0f, 1.0f);
+
+  glMatrixModview.Push();
+  glMatrixModview->Translatef(0.0f, capture->GetHeight(), 0.0f);
+  glMatrixModview->Scalef(1.0f, -1.0f, 1.0f);
+  glMatrixModview.Load();
 
   capture->BeginRender();
 
@@ -1800,8 +1696,7 @@ bool CLinuxRendererGL::RenderCapture(CRenderCapture* capture)
   capture->EndRender();
 
   // revert model view matrix
-  glMatrixMode(GL_MODELVIEW);
-  glPopMatrix();
+  glMatrixModview.PopLoad();
 
   // restore original video rect
   m_destRect = saveSize;
@@ -2438,7 +2333,6 @@ bool CLinuxRendererGL::UploadVDPAUTexture(int index)
 #ifdef HAVE_LIBVDPAU
   VDPAU::CVdpauRenderPicture *vdpau = m_buffers[index].vdpau;
 
-  YV12Image &im     = m_buffers[index].image;
   YUVFIELDS &fields = m_buffers[index].fields;
   YUVPLANE &plane = fields[FIELD_FULL][0];
 
@@ -2599,17 +2493,9 @@ bool CLinuxRendererGL::UploadVDPAUTexture420(int index)
 void CLinuxRendererGL::DeleteVAAPITexture(int index)
 {
 #ifdef HAVE_LIBVA
-  YUVPLANE       &plane = m_buffers[index].fields[0][0];
-  VAAPI::CHolder &va    = m_buffers[index].vaapi;
-
-  va.display.reset();
-  va.surface.reset();
-  va.surfglx.reset();
-
-  if(plane.id && glIsTexture(plane.id))
-    glDeleteTextures(1, &plane.id);
+  YUVPLANE &plane = m_buffers[index].fields[FIELD_FULL][0];
+  SAFE_RELEASE(m_buffers[index].vaapi);
   plane.id = 0;
-
 #endif
 }
 
@@ -2633,25 +2519,8 @@ bool CLinuxRendererGL::CreateVAAPITexture(int index)
   plane.pixpertex_x = 1;
   plane.pixpertex_y = 1;
 
-  if(m_renderMethod & RENDER_POT)
-  {
-    plane.texwidth  = NP2(plane.texwidth);
-    plane.texheight = NP2(plane.texheight);
-  }
+  plane.id = 1;
 
-  glEnable(m_textureTarget);
-  glGenTextures(1, &plane.id);
-  VerifyGLState();
-
-  glBindTexture(m_textureTarget, plane.id);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-  glTexImage2D(m_textureTarget, 0, GL_RGBA, plane.texwidth, plane.texheight, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
-  glBindTexture(m_textureTarget, 0);
-  glDisable(m_textureTarget);
 #endif
   return true;
 }
@@ -2659,82 +2528,45 @@ bool CLinuxRendererGL::CreateVAAPITexture(int index)
 bool CLinuxRendererGL::UploadVAAPITexture(int index)
 {
 #ifdef HAVE_LIBVA
-  YUVPLANE       &plane = m_buffers[index].fields[0][0];
-  VAAPI::CHolder &va    = m_buffers[index].vaapi;
-  VAStatus status;
+  VAAPI::CVaapiRenderPicture *vaapi = m_buffers[index].vaapi;
 
-  if(!va.surface)
+  YUVFIELDS &fields = m_buffers[index].fields;
+  YUVPLANE &plane = fields[FIELD_FULL][0];
+
+  if (!vaapi || !vaapi->valid)
+  {
+    return false;
+  }
+
+  if (!vaapi->CopyGlx())
     return false;
 
-  if(va.display && va.surface->m_display != va.display)
+  plane.id = vaapi->texture;
+
+  // in stereoscopic mode sourceRect may only
+  // be a part of the source video surface
+  plane.rect = m_sourceRect;
+
+  // clip rect
+  if (vaapi->crop.x1 > plane.rect.x1)
+    plane.rect.x1 = vaapi->crop.x1;
+  if (vaapi->crop.x2 < plane.rect.x2)
+    plane.rect.x2 = vaapi->crop.x2;
+  if (vaapi->crop.y1 > plane.rect.y1)
+    plane.rect.y1 = vaapi->crop.y1;
+  if (vaapi->crop.y2 < plane.rect.y2)
+    plane.rect.y2 = vaapi->crop.y2;
+
+  plane.texheight = vaapi->texHeight;
+  plane.texwidth  = vaapi->texWidth;
+
+  if (m_textureTarget == GL_TEXTURE_2D)
   {
-    CLog::Log(LOGDEBUG, "CLinuxRendererGL::UploadVAAPITexture - context changed %d", index);
-    va.surfglx.reset();
+    plane.rect.y1 /= plane.texheight;
+    plane.rect.y2 /= plane.texheight;
+    plane.rect.x1 /= plane.texwidth;
+    plane.rect.x2 /= plane.texwidth;
   }
-  va.display = va.surface->m_display;
-
-  CSingleLock lock(*va.display);
-
-  if(va.display->lost())
-    return false;
-
-  if(!va.surfglx)
-  {
-    CLog::Log(LOGDEBUG, "CLinuxRendererGL::UploadVAAPITexture - creating vaapi surface for texture %d", index);
-    void* surface;
-    status = vaCreateSurfaceGLX(va.display->get()
-                              , m_textureTarget
-                              , plane.id
-                              , &surface);
-    if(status != VA_STATUS_SUCCESS)
-    {
-      CLog::Log(LOGERROR, "CLinuxRendererGL::UploadVAAPITexture - failed to create vaapi glx surface (%d)", status);
-      return false;
-    }
-    va.surfglx = VAAPI::CSurfaceGLPtr(new VAAPI::CSurfaceGL(surface, va.display));
-  }
-  int colorspace;
-  if(CONF_FLAGS_YUVCOEF_MASK(m_iFlags) == CONF_FLAGS_YUVCOEF_BT709)
-    colorspace = VA_SRC_BT709;
-  else
-    colorspace = VA_SRC_BT601;
-
-  int field;
-  if      (m_currentField == FIELD_TOP)
-    field = VA_TOP_FIELD;
-  else if (m_currentField == FIELD_BOT)
-    field = VA_BOTTOM_FIELD;
-  else
-    field = VA_FRAME_PICTURE;
-
-#if USE_VAAPI_GLX_BIND
-  status = vaAssociateSurfaceGLX(va.display->get()
-                               , va.surfglx->m_id
-                               , va.surface->m_id
-                               , field | colorspace);
-#else
-  glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-  status = vaCopySurfaceGLX(va.display->get()
-                          , va.surfglx->m_id
-                          , va.surface->m_id
-                          , field | colorspace);
-#endif
-
-  // when a vaapi backend is lost (vdpau), we start getting these errors
-  if(status == VA_STATUS_ERROR_INVALID_SURFACE
-  || status == VA_STATUS_ERROR_INVALID_DISPLAY)
-  {
-    va.display->lost(true);
-    for(int i = 0; i < m_NumYV12Buffers; i++)
-    {
-      m_buffers[i].vaapi.display.reset();
-      m_buffers[i].vaapi.surface.reset();
-      m_buffers[i].vaapi.surfglx.reset();
-    }
-  }
-
-  if(status != VA_STATUS_SUCCESS)
-    CLog::Log(LOGERROR, "CLinuxRendererGL::UploadVAAPITexture - failed to copy surface to glx %d - %s", status, vaErrorStr(status));
 
 #endif
   return true;
@@ -2746,58 +2578,36 @@ bool CLinuxRendererGL::UploadVAAPITexture(int index)
 bool CLinuxRendererGL::UploadCVRefTexture(int index)
 {
 #ifdef TARGET_DARWIN
+  YUVBUFFER &buf    = m_buffers[index];
+  YUVFIELDS &fields = buf.fields;
+
   CVBufferRef cvBufferRef = m_buffers[index].cvBufferRef;
 
   glEnable(m_textureTarget);
 
-  if (cvBufferRef)
+  if (cvBufferRef && fields[m_currentField][0].flipindex != buf.flipindex)
   {
-    YUVFIELDS &fields = m_buffers[index].fields;
-    YUVPLANE  &plane  = fields[0][0];
 
-    if (Cocoa_GetOSVersion() >= 0x1074)
-    {
-      // 10.7.4 for Retina Macbooks on Lion breaks CGLTexImageIOSurface2D/GL_YCBCR_422_APPLE,
-      // 10.8 Mountain Lion breaks CGLTexImageIOSurface2D/GL_YCBCR_422_APPLE,
-      // upload the old way.
-      CVPixelBufferLockBaseAddress(cvBufferRef, kCVPixelBufferLock_ReadOnly);
+    // It is the fastest way to render a CVPixelBuffer backed
+    // with an IOSurface as there is no CPU -> GPU upload.
+    CGLContextObj cgl_ctx  = (CGLContextObj)g_Windowing.GetCGLContextObj();
+    IOSurfaceRef	surface  = CVPixelBufferGetIOSurface(cvBufferRef);
+    GLsizei       texWidth = IOSurfaceGetWidth(surface);
+    GLsizei       texHeight= IOSurfaceGetHeight(surface);
+    OSType        format_type = IOSurfaceGetPixelFormat(surface);
 
-      GLsizei       texHeight   = CVPixelBufferGetHeight(cvBufferRef);
-      size_t        rowbytes    = CVPixelBufferGetBytesPerRow(cvBufferRef);
-      unsigned char *bufferBase = (unsigned char*)CVPixelBufferGetBaseAddress(cvBufferRef);
+    glBindTexture(m_textureTarget, fields[FIELD_FULL][0].id);
 
-      glBindTexture(m_textureTarget, plane.id);
-      glTexSubImage2D(m_textureTarget, 0, 0, 0, rowbytes/2, texHeight, GL_YCBCR_422_APPLE, GL_UNSIGNED_SHORT_8_8_APPLE, bufferBase);
-      glBindTexture(m_textureTarget, 0);
+    if (format_type == kCVPixelFormatType_422YpCbCr8)
+      CGLTexImageIOSurface2D(cgl_ctx, m_textureTarget, GL_RGBA8,
+        texWidth / 2, texHeight, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, surface, 0);
+    else if (format_type == kCVPixelFormatType_32BGRA)
+      CGLTexImageIOSurface2D(cgl_ctx, m_textureTarget, GL_RGBA8,
+        texWidth, texHeight, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, surface, 0);
 
-      CVPixelBufferUnlockBaseAddress(cvBufferRef, kCVPixelBufferLock_ReadOnly);
-    }
-    else
-    {
-      // It is the fastest way to render a CVPixelBuffer backed
-      // with an IOSurface as there is no CPU -> GPU upload.
-      CGLContextObj cgl_ctx  = (CGLContextObj)g_Windowing.GetCGLContextObj();
-      IOSurfaceRef	surface  = CVPixelBufferGetIOSurface(cvBufferRef);
-      GLsizei       texWidth = IOSurfaceGetWidth(surface);
-      GLsizei       texHeight= IOSurfaceGetHeight(surface);
-      OSType        format_type = CVPixelBufferGetPixelFormatType(cvBufferRef);
+    glBindTexture(m_textureTarget, 0);
+    fields[FIELD_FULL][0].flipindex = buf.flipindex;
 
-      glBindTexture(m_textureTarget, plane.id);
-
-      if (format_type == kCVPixelFormatType_422YpCbCr8)
-        CGLTexImageIOSurface2D(cgl_ctx, m_textureTarget, GL_RGB8,
-          texWidth, texHeight, GL_YCBCR_422_APPLE, GL_UNSIGNED_SHORT_8_8_APPLE, surface, 0);
-      else if (format_type == kCVPixelFormatType_32BGRA)
-        CGLTexImageIOSurface2D(cgl_ctx, m_textureTarget, GL_RGBA8,
-          texWidth, texHeight, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, surface, 0);
-
-      glBindTexture(m_textureTarget, 0);
-    }
-
-    CVBufferRelease(cvBufferRef);
-    m_buffers[index].cvBufferRef = NULL;
-
-    plane.flipindex = m_buffers[index].flipindex;
   }
 
 
@@ -2840,27 +2650,19 @@ bool CLinuxRendererGL::CreateCVRefTexture(int index)
   im.cshift_x = 0;
   im.cshift_y = 0;
 
-  plane.texwidth  = NP2(im.width);
-  plane.texheight = NP2(im.height);
-  plane.pixpertex_x = 1;
+  plane.pixpertex_x = 2;
   plane.pixpertex_y = 1;
+  plane.texwidth    = im.width  / plane.pixpertex_x;
+  plane.texheight   = im.height / plane.pixpertex_y;
+
+  if(m_renderMethod & RENDER_POT)
+  {
+    plane.texwidth  = NP2(plane.texwidth);
+    plane.texheight = NP2(plane.texheight);
+  }
 
   glEnable(m_textureTarget);
   glGenTextures(1, &plane.id);
-  if (Cocoa_GetOSVersion() >= 0x1074)
-  {
-    // 10.7.4 for Retina Macbooks on Lion breaks CGLTexImageIOSurface2D/GL_YCBCR_422_APPLE,
-    // 10.8 Mountain Lion breaks CGLTexImageIOSurface2D/GL_YCBCR_422_APPLE,
-    // upload the old way.
-    glBindTexture(m_textureTarget, plane.id);
-    glTexParameteri(m_textureTarget, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(m_textureTarget, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    // This is necessary for non-power-of-two textures
-    glTexParameteri(m_textureTarget, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(m_textureTarget, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(m_textureTarget, 0, GL_RGBA, plane.texwidth, plane.texheight, 0, GL_YCBCR_422_APPLE, GL_UNSIGNED_SHORT_8_8_APPLE, NULL);
-    glBindTexture(m_textureTarget, 0);
-  }
   glDisable(m_textureTarget);
 
 #endif
@@ -3161,14 +2963,14 @@ void CLinuxRendererGL::ToRGBFrame(YV12Image* im, unsigned flipIndexPlane, unsign
     m_rgbBuffer = (BYTE*)glMapBufferARB(GL_PIXEL_UNPACK_BUFFER_ARB, GL_WRITE_ONLY_ARB) + PBO_OFFSET;
   }
 
-  m_context = m_dllSwScale->sws_getCachedContext(m_context,
-                                                 im->width, im->height, srcFormat,
-                                                 im->width, im->height, PIX_FMT_BGRA,
+  m_context = sws_getCachedContext(m_context,
+                                                 im->width, im->height, (AVPixelFormat)srcFormat,
+                                                 im->width, im->height, (AVPixelFormat)PIX_FMT_BGRA,
                                                  SWS_FAST_BILINEAR | SwScaleCPUFlags(), NULL, NULL, NULL);
 
   uint8_t *dst[]       = { m_rgbBuffer, 0, 0, 0 };
   int      dstStride[] = { (int)m_sourceWidth * 4, 0, 0, 0 };
-  m_dllSwScale->sws_scale(m_context, src, srcStride, 0, im->height, dst, dstStride);
+  sws_scale(m_context, src, srcStride, 0, im->height, dst, dstStride);
 
   if (m_rgbPbo)
   {
@@ -3241,9 +3043,9 @@ void CLinuxRendererGL::ToRGBFields(YV12Image* im, unsigned flipIndexPlaneTop, un
     m_rgbBuffer = (BYTE*)glMapBufferARB(GL_PIXEL_UNPACK_BUFFER_ARB, GL_WRITE_ONLY_ARB) + PBO_OFFSET;
   }
 
-  m_context = m_dllSwScale->sws_getCachedContext(m_context,
-                                                 im->width, im->height >> 1, srcFormat,
-                                                 im->width, im->height >> 1, PIX_FMT_BGRA,
+  m_context = sws_getCachedContext(m_context,
+                                                 im->width, im->height >> 1, (AVPixelFormat)srcFormat,
+                                                 im->width, im->height >> 1, (AVPixelFormat)PIX_FMT_BGRA,
                                                  SWS_FAST_BILINEAR | SwScaleCPUFlags(), NULL, NULL, NULL);
   uint8_t *dstTop[]    = { m_rgbBuffer, 0, 0, 0 };
   uint8_t *dstBot[]    = { m_rgbBuffer + m_sourceWidth * m_sourceHeight * 2, 0, 0, 0 };
@@ -3251,8 +3053,8 @@ void CLinuxRendererGL::ToRGBFields(YV12Image* im, unsigned flipIndexPlaneTop, un
 
   //convert each YUV field to an RGB field, the top field is placed at the top of the rgb buffer
   //the bottom field is placed at the bottom of the rgb buffer
-  m_dllSwScale->sws_scale(m_context, srcTop, srcStrideTop, 0, im->height >> 1, dstTop, dstStride);
-  m_dllSwScale->sws_scale(m_context, srcBot, srcStrideBot, 0, im->height >> 1, dstBot, dstStride);
+  sws_scale(m_context, srcTop, srcStrideTop, 0, im->height >> 1, dstTop, dstStride);
+  sws_scale(m_context, srcBot, srcStrideBot, 0, im->height >> 1, dstBot, dstStride);
 
   if (m_rgbPbo)
   {
@@ -3347,11 +3149,11 @@ bool CLinuxRendererGL::UploadRGBTexture(int source)
   }
 
   if (imaging==1 &&
-      ((CMediaSettings::Get().GetCurrentVideoSettings().m_Brightness!=50) ||
-       (CMediaSettings::Get().GetCurrentVideoSettings().m_Contrast!=50)))
+      ((CMediaSettings::GetInstance().GetCurrentVideoSettings().m_Brightness!=50) ||
+       (CMediaSettings::GetInstance().GetCurrentVideoSettings().m_Contrast!=50)))
   {
-    GLfloat brightness = ((GLfloat)CMediaSettings::Get().GetCurrentVideoSettings().m_Brightness - 50.0f)/100.0f;;
-    GLfloat contrast   = ((GLfloat)CMediaSettings::Get().GetCurrentVideoSettings().m_Contrast)/50.0f;
+    GLfloat brightness = ((GLfloat)CMediaSettings::GetInstance().GetCurrentVideoSettings().m_Brightness - 50.0f)/100.0f;
+    GLfloat contrast   = ((GLfloat)CMediaSettings::GetInstance().GetCurrentVideoSettings().m_Contrast)/50.0f;
 
     glPixelTransferf(GL_RED_SCALE  , contrast);
     glPixelTransferf(GL_GREEN_SCALE, contrast);
@@ -3438,7 +3240,7 @@ bool CLinuxRendererGL::Supports(ERENDERFEATURE feature)
 {
   if(feature == RENDERFEATURE_BRIGHTNESS)
   {
-    if ((m_renderMethod & RENDER_VDPAU) && !CSettings::Get().GetBool("videoscreen.limitedrange"))
+    if ((m_renderMethod & RENDER_VDPAU) && !CSettings::GetInstance().GetBool(CSettings::SETTING_VIDEOSCREEN_LIMITEDRANGE))
       return true;
 
     if (m_renderMethod & RENDER_VAAPI)
@@ -3451,7 +3253,7 @@ bool CLinuxRendererGL::Supports(ERENDERFEATURE feature)
   
   if(feature == RENDERFEATURE_CONTRAST)
   {
-    if ((m_renderMethod & RENDER_VDPAU) && !CSettings::Get().GetBool("videoscreen.limitedrange"))
+    if ((m_renderMethod & RENDER_VDPAU) && !CSettings::GetInstance().GetBool(CSettings::SETTING_VIDEOSCREEN_LIMITEDRANGE))
       return true;
 
     if (m_renderMethod & RENDER_VAAPI)
@@ -3485,7 +3287,6 @@ bool CLinuxRendererGL::Supports(ERENDERFEATURE feature)
   }
 
   if (feature == RENDERFEATURE_STRETCH         ||
-      feature == RENDERFEATURE_CROP            ||
       feature == RENDERFEATURE_ZOOM            ||
       feature == RENDERFEATURE_VERTICAL_SHIFT  ||
       feature == RENDERFEATURE_PIXEL_RATIO     ||
@@ -3533,28 +3334,19 @@ bool CLinuxRendererGL::Supports(EINTERLACEMETHOD method)
     return false;
   }
 
-  if(m_renderMethod & RENDER_VAAPI)
+  if(m_format == RENDER_FMT_VAAPI ||
+      m_format == RENDER_FMT_VAAPINV12)
   {
 #ifdef HAVE_LIBVA
-    VAAPI::CDisplayPtr disp = m_buffers[m_iYV12RenderBuffer].vaapi.display;
-    if(disp)
-    {
-      CSingleLock lock(*disp);
-
-      if(disp->support_deinterlace())
-      {
-        if( method == VS_INTERLACEMETHOD_RENDER_BOB_INVERTED
-        ||  method == VS_INTERLACEMETHOD_RENDER_BOB )
-          return true;
-      }
-    }
+    VAAPI::CVaapiRenderPicture *vaapiPic = m_buffers[m_iYV12RenderBuffer].vaapi;
+    if(vaapiPic && vaapiPic->vaapi)
+      return vaapiPic->vaapi->Supports(method);
 #endif
     return false;
   }
 
-#ifdef TARGET_DARWIN
-  // YADIF too slow for HD but we have no methods to fall back
-  // to something that works so just turn it off.
+#ifdef TARGET_DARWIN_IOS
+  // iOS does not have the ponies for YADIF
   if(method == VS_INTERLACEMETHOD_DEINTERLACE)
     return false;
 #endif
@@ -3596,7 +3388,7 @@ bool CLinuxRendererGL::Supports(ESCALINGMETHOD method)
     // if scaling is below level, avoid hq scaling
     float scaleX = fabs(((float)m_sourceWidth - m_destRect.Width())/m_sourceWidth)*100;
     float scaleY = fabs(((float)m_sourceHeight - m_destRect.Height())/m_sourceHeight)*100;
-    int minScale = CSettings::Get().GetInt("videoplayer.hqscalers");
+    int minScale = CSettings::GetInstance().GetInt(CSettings::SETTING_VIDEOPLAYER_HQSCALERS);
     if (scaleX < minScale && scaleY < minScale)
       return false;
 
@@ -3663,15 +3455,21 @@ void CLinuxRendererGL::UnBindPbo(YUVBUFFER& buff)
     glBindBufferARB(GL_PIXEL_UNPACK_BUFFER_ARB, 0);
 }
 
-unsigned int CLinuxRendererGL::GetProcessorSize()
+CRenderInfo CLinuxRendererGL::GetRenderInfo()
 {
-  if(m_format == RENDER_FMT_VDPAU
-  || m_format == RENDER_FMT_VDPAU_420
-  || m_format == RENDER_FMT_VAAPI
-  || m_format == RENDER_FMT_CVBREF)
-    return 1;
+  CRenderInfo info;
+  info.formats = m_formats;
+  info.max_buffer_size = NUM_BUFFERS;
+  if(m_format == RENDER_FMT_CVBREF)
+    info.optimal_buffer_size = 2;
+  else if (m_format == RENDER_FMT_VAAPI ||
+           m_format == RENDER_FMT_VAAPINV12 ||
+           m_format == RENDER_FMT_VDPAU ||
+           m_format == RENDER_FMT_VDPAU_420)
+    info.optimal_buffer_size = 5;
   else
-    return 0;
+    info.optimal_buffer_size = 3;
+  return info;
 }
 
 #ifdef HAVE_LIBVDPAU
@@ -3685,10 +3483,12 @@ void CLinuxRendererGL::AddProcessor(VDPAU::CVdpauRenderPicture *vdpau, int index
 #endif
 
 #ifdef HAVE_LIBVA
-void CLinuxRendererGL::AddProcessor(VAAPI::CHolder& holder, int index)
+void CLinuxRendererGL::AddProcessor(VAAPI::CVaapiRenderPicture *vaapi, int index)
 {
   YUVBUFFER &buf = m_buffers[index];
-  buf.vaapi.surface = holder.surface;
+  VAAPI::CVaapiRenderPicture *pic = vaapi->Acquire();
+  SAFE_RELEASE(buf.vaapi);
+  buf.vaapi = pic;
 }
 #endif
 

@@ -30,13 +30,17 @@
 #include "IInputHandler.h"
 
 #include "xbmc.h"
-#include "android/jni/Context.h"
+#include "android/jni/Activity.h"
 #include "android/jni/BroadcastReceiver.h"
+#include "android/jni/AudioManager.h"
 #include "threads/Event.h"
+
+#include "JNIMainActivity.h"
 
 // forward delares
 class CJNIWakeLock;
 class CAESinkAUDIOTRACK;
+class CVariant;
 typedef struct _JNIEnv JNIEnv;
 
 struct androidIcon
@@ -44,22 +48,24 @@ struct androidIcon
   unsigned int width;
   unsigned int height;
   void *pixels;
-};  
+};
 
 struct androidPackage
 {
   std::string packageName;
   std::string packageLabel;
+  int icon;
 };
 
-
-class CXBMCApp : public IActivityHandler, public CJNIContext, public CJNIBroadcastReceiver
+class CXBMCApp : public IActivityHandler, public CJNIMainActivity, public CJNIBroadcastReceiver, public CJNIAudioManagerAudioFocusChangeListener
 {
 public:
   CXBMCApp(ANativeActivity *nativeActivity);
   virtual ~CXBMCApp();
   virtual void onReceive(CJNIIntent intent);
   virtual void onNewIntent(CJNIIntent intent);
+  virtual void onVolumeChanged(int volume);
+  virtual void onAudioFocusChange(int focusChange);
 
   bool isValid() { return m_activity != NULL; }
 
@@ -85,10 +91,12 @@ public:
   static int android_printf(const char *format, ...);
   
   static int GetBatteryLevel();
+  static bool EnableWakeLock(bool on);
+  static bool HasFocus();
+  static bool IsHeadsetPlugged();
+
   static bool StartActivity(const std::string &package, const std::string &intent = std::string(), const std::string &dataType = std::string(), const std::string &dataURI = std::string());
-  static bool ListApplications(std::vector <androidPackage> *applications);
-  static bool GetIconSize(const std::string &packageName, int *width, int *height);
-  static bool GetIcon(const std::string &packageName, void* buffer, unsigned int bufSize); 
+  static std::vector <androidPackage> GetApplications();
 
   /*!
    * \brief If external storage is available, it returns the path for the external storage (for the specified type)
@@ -99,32 +107,48 @@ public:
   static bool GetExternalStorage(std::string &path, const std::string &type = "");
   static bool GetStorageUsage(const std::string &path, std::string &usage);
   static int GetMaxSystemVolume();
-  static int GetSystemVolume();
-  static void SetSystemVolume(int val);
+  static float GetSystemVolume();
+  static void SetSystemVolume(float percent);
 
+  static void SetRefreshRate(float rate);
   static int GetDPI();
+
+  // Playback callbacks
+  static void OnPlayBackStarted();
+  static void OnPlayBackPaused();
+  static void OnPlayBackResumed();
+  static void OnPlayBackStopped();
+  static void OnPlayBackEnded();
+
+  static CXBMCApp* get() { return m_xbmcappinstance; }
+
 protected:
   // limit who can access Volume
   friend class CAESinkAUDIOTRACK;
 
   static int GetMaxSystemVolume(JNIEnv *env);
-  static void SetSystemVolume(JNIEnv *env, float percent);
+  static bool AcquireAudioFocus();
+  static bool ReleaseAudioFocus();
 
 private:
+  static CXBMCApp* m_xbmcappinstance;
   static bool HasLaunchIntent(const std::string &package);
-  bool getWakeLock();
   std::string GetFilenameFromIntent(const CJNIIntent &intent);
   void run();
   void stop();
   void SetupEnv();
+  static void SetRefreshRateCallback(CVariant *rate);
   static ANativeActivity *m_activity;
-  CJNIWakeLock *m_wakeLock;
-  static int m_batteryLevel;  
-  static int m_initialVolume;  
+  static CJNIWakeLock *m_wakeLock;
+  static int m_batteryLevel;
+  static bool m_hasFocus;
+  static bool m_headsetPlugged;
   bool m_firstrun;
   bool m_exiting;
   pthread_t m_thread;
-  
+  static CCriticalSection m_applicationsMutex;
+  static std::vector<androidPackage> m_applications;
+
   static ANativeWindow* m_window;
   static CEvent m_windowCreated;
 

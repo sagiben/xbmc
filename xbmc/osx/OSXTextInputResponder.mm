@@ -27,7 +27,11 @@
 #include "guilib/GUIWindowManager.h"
 #include "GUIUserMessages.h"
 #include "utils/log.h"
+#include "messaging/ApplicationMessenger.h"
+#include "input/Key.h"
 #undef BOOL
+
+using namespace KODI::MESSAGING;
 
 void SendKeyboardText(const char *text)
 {
@@ -37,9 +41,9 @@ void SendKeyboardText(const char *text)
   if ((unsigned char)*text < ' ' || *text == 127)
     return;
 
-  CGUIMessage msg(GUI_MSG_INPUT_TEXT, 0, 0);
-  msg.SetLabel(text);
-  g_windowManager.SendThreadMessage(msg, g_windowManager.GetFocusedWindow());
+  CAction *action = new CAction(ACTION_INPUT_TEXT);
+  action->SetText(text);
+  CApplicationMessenger::GetInstance().PostMsg(TMSG_GUI_ACTION, WINDOW_INVALID, -1, static_cast<void*>(action));
 }
 
 void SendEditingText(const char *text, unsigned int location, unsigned int length)
@@ -173,7 +177,7 @@ void SendEditingText(const char *text, unsigned int location, unsigned int lengt
 //  CLog::Log(LOGDEBUG, "firstRectForCharacterRange: (%lu, %lu): windowHeight = %g, rect = %s",
 //            theRange.location, theRange.length, windowHeight,
 //            [NSStringFromRect(rect) UTF8String]);
-  rect.origin = [[self window] convertBaseToScreen: rect.origin];
+  rect.origin = [[self window] convertRectToScreen:rect].origin;
 
   return rect;
 }

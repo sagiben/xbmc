@@ -28,6 +28,7 @@
 #include "interfaces/IAnnouncer.h"
 
 class TiXmlElement;
+class CVariant;
 
 typedef enum
 {
@@ -65,13 +66,17 @@ public:
 private:
   unsigned int     m_updateTime;
   UpdateState      m_updateState;
-  bool             m_isDbUpdating;
   bool             m_isAnnounced;
   unsigned int     m_jobID;
   CGUIInfoLabel    m_url;
   CGUIInfoLabel    m_target;
+  CGUIInfoLabel    m_sortMethod;
+  CGUIInfoLabel    m_sortOrder;
+  CGUIInfoLabel    m_limit;
   std::string      m_currentUrl;
   std::string      m_currentTarget;   ///< \brief node.target property on the list as a whole
+  SortDescription  m_currentSort;
+  unsigned int     m_currentLimit;
   std::vector<CGUIStaticItemPtr> m_items;
   std::vector<InfoTagType> m_itemTypes;
   CCriticalSection m_section;
@@ -79,5 +84,6 @@ private:
   void FireJob();
   void RegisterListProvider(bool hasLibraryContent);
   bool UpdateURL();
-  static bool HasLibraryContent(const std::string &url);
+  bool UpdateLimit();
+  bool UpdateSort();
 };

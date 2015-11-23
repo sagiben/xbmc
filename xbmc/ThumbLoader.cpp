@@ -23,7 +23,6 @@
 #include "FileItem.h"
 #include "TextureCache.h"
 
-using namespace std;
 using namespace XFILE;
 
 CThumbLoader::CThumbLoader() :
@@ -47,18 +46,18 @@ void CThumbLoader::OnLoaderFinish()
   m_textureDatabase->Close();
 }
 
-CStdString CThumbLoader::GetCachedImage(const CFileItem &item, const CStdString &type)
+std::string CThumbLoader::GetCachedImage(const CFileItem &item, const std::string &type)
 {
   if (!item.GetPath().empty() && m_textureDatabase->Open())
   {
-    CStdString image = m_textureDatabase->GetTextureForPath(item.GetPath(), type);
+    std::string image = m_textureDatabase->GetTextureForPath(item.GetPath(), type);
     m_textureDatabase->Close();
     return image;
   }
   return "";
 }
 
-void CThumbLoader::SetCachedImage(const CFileItem &item, const CStdString &type, const CStdString &image)
+void CThumbLoader::SetCachedImage(const CFileItem &item, const std::string &type, const std::string &image)
 {
   if (!item.GetPath().empty() && m_textureDatabase->Open())
   {
@@ -99,7 +98,7 @@ bool CProgramThumbLoader::LoadItemLookup(CFileItem *pItem)
 bool CProgramThumbLoader::FillThumb(CFileItem &item)
 {
   // no need to do anything if we already have a thumb set
-  CStdString thumb = item.GetArt("thumb");
+  std::string thumb = item.GetArt("thumb");
 
   if (thumb.empty())
   { // see whether we have a cached image for this item
@@ -114,13 +113,13 @@ bool CProgramThumbLoader::FillThumb(CFileItem &item)
 
   if (!thumb.empty())
   {
-    CTextureCache::Get().BackgroundCacheImage(thumb);
+    CTextureCache::GetInstance().BackgroundCacheImage(thumb);
     item.SetArt("thumb", thumb);
   }
   return true;
 }
 
-CStdString CProgramThumbLoader::GetLocalThumb(const CFileItem &item)
+std::string CProgramThumbLoader::GetLocalThumb(const CFileItem &item)
 {
   if (item.IsAddonsPath())
     return "";
@@ -128,13 +127,13 @@ CStdString CProgramThumbLoader::GetLocalThumb(const CFileItem &item)
   // look for the thumb
   if (item.m_bIsFolder)
   {
-    CStdString folderThumb = item.GetFolderThumb();
+    std::string folderThumb = item.GetFolderThumb();
     if (CFile::Exists(folderThumb))
       return folderThumb;
   }
   else
   {
-    CStdString fileThumb(item.GetTBNFile());
+    std::string fileThumb(item.GetTBNFile());
     if (CFile::Exists(fileThumb))
       return fileThumb;
   }

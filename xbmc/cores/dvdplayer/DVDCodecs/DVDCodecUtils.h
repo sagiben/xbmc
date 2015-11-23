@@ -37,11 +37,10 @@ public:
   static DVDVideoPicture* ConvertToYUV422PackedPicture(DVDVideoPicture *pSrc, ERenderFormat format);
   static bool CopyNV12Picture(YV12Image* pImage, DVDVideoPicture *pSrc);
   static bool CopyYUV422PackedPicture(YV12Image* pImage, DVDVideoPicture *pSrc);
-  static bool CopyDXVA2Picture(YV12Image* pImage, DVDVideoPicture *pSrc);
 
   static bool IsVP3CompatibleWidth(int width);
 
-  static double NormalizeFrameduration(double frameduration);
+  static double NormalizeFrameduration(double frameduration, bool *match = NULL);
 
   static ERenderFormat EFormatFromPixfmt(int fmt);
   static int           PixfmtFromEFormat(ERenderFormat format);

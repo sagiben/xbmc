@@ -24,6 +24,8 @@
 #include "interfaces/IAnnouncer.h"
 #include "utils/Job.h"
 
+class CVariant;
+
 class CGUIWindowHome :
       public CGUIWindow,
       public ANNOUNCEMENT::IAnnouncer,
@@ -45,5 +47,4 @@ private:
 
   bool m_recentlyAddedRunning;
   int m_cumulativeUpdateFlag;
-  bool m_dbUpdating;
 };

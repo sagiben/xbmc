@@ -24,7 +24,6 @@
 #include "input/ButtonTranslator.h"
 
 using namespace PERIPHERALS;
-using namespace std;
 
 CPeripheralHID::CPeripheralHID(const PeripheralScanResult& scanResult) :
   CPeripheral(scanResult)
@@ -81,9 +80,9 @@ bool CPeripheralHID::InitialiseFeature(const PeripheralFeature feature)
   return CPeripheral::InitialiseFeature(feature);
 }
 
-void CPeripheralHID::OnSettingChanged(const CStdString &strChangedSetting)
+void CPeripheralHID::OnSettingChanged(const std::string &strChangedSetting)
 {
-  if (m_bInitialised && ((strChangedSetting.Equals("keymap") && !GetSettingBool("do_not_use_custom_keymap")) || strChangedSetting.Equals("keymap_enabled")))
+  if (m_bInitialised && ((StringUtils::EqualsNoCase(strChangedSetting, "keymap") && !GetSettingBool("do_not_use_custom_keymap")) || StringUtils::EqualsNoCase(strChangedSetting, "keymap_enabled")))
   {
     m_bInitialised = false;
     InitialiseFeature(FEATURE_HID);

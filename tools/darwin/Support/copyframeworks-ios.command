@@ -53,18 +53,18 @@ EXTERNAL_LIBS=$XBMC_DEPENDS
 TARGET_NAME=$PRODUCT_NAME.$WRAPPER_EXTENSION
 TARGET_CONTENTS=$TARGET_BUILD_DIR/$TARGET_NAME
 
-TARGET_BINARY=$TARGET_CONTENTS/XBMC
+TARGET_BINARY=$TARGET_CONTENTS/$APP_NAME
 TARGET_FRAMEWORKS=$TARGET_CONTENTS/Frameworks
 DYLIB_NAMEPATH=@executable_path/Frameworks
-XBMC_HOME=$TARGET_CONTENTS/XBMCData/XBMCHome
+XBMC_HOME=$TARGET_CONTENTS/AppData/AppHome
 
 mkdir -p "$TARGET_CONTENTS"
-mkdir -p "$TARGET_CONTENTS/XBMCData/XBMCHome"
+mkdir -p "$TARGET_CONTENTS/AppData/AppHome"
 # start clean so we don't keep old dylibs
 rm -rf "$TARGET_CONTENTS/Frameworks"
 mkdir -p "$TARGET_CONTENTS/Frameworks"
 
-echo "Package $TARGET_BUILD_DIR/XBMC"
+echo "Package $TARGET_BUILD_DIR/$APP_NAME"
 
 # Copy all of XBMC's dylib dependencies and rename their locations to inside the Framework
 echo "Checking $TARGET_BINARY dylib dependencies"
@@ -74,13 +74,6 @@ cp -f "$a" "$TARGET_FRAMEWORKS/"
 chmod u+w "$TARGET_FRAMEWORKS/$(basename $a)"
 install_name_tool -change "$a" "$DYLIB_NAMEPATH/$(basename $a)" "$TARGET_BINARY"
 done
-
-if [ "$SDK_NAME" = "iphoneos6.0" ] ; then
-echo "Fixing $TARGET_BINARY VideoToolbox dylib name"
-VTB_SDK6=/System/Library/Frameworks/VideoToolbox.framework/VideoToolbox
-VTB_SDK5=/System/Library/PrivateFrameworks/VideoToolbox.framework/VideoToolbox
-install_name_tool -change "$VTB_SDK6" "$VTB_SDK5" "$TARGET_BINARY"
-fi
 
 echo "Package $EXTERNAL_LIBS/lib/python2.6"
 mkdir -p "$TARGET_CONTENTS/Frameworks/lib"

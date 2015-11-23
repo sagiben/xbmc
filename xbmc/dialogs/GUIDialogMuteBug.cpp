@@ -19,13 +19,10 @@
  */
 
 #include "GUIDialogMuteBug.h"
-#include "GUIUserMessages.h"
 #include "Application.h"
 
-// the MuteBug is a true modeless dialog
-
 CGUIDialogMuteBug::CGUIDialogMuteBug(void)
-    : CGUIDialog(WINDOW_DIALOG_MUTE_BUG, "DialogMuteBug.xml")
+  : CGUIDialog(WINDOW_DIALOG_MUTE_BUG, "DialogMuteBug.xml", DialogModalityType::MODELESS)
 {
   m_loadType = LOAD_ON_GUI_INIT;
 }
@@ -36,7 +33,7 @@ CGUIDialogMuteBug::~CGUIDialogMuteBug(void)
 void CGUIDialogMuteBug::UpdateVisibility()
 {
   if (g_application.IsMuted() || g_application.GetVolume(false) <= VOLUME_MINIMUM)
-    Show();
+    Open();
   else
     Close();
 }

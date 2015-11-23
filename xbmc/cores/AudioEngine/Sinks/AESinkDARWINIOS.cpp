@@ -93,7 +93,7 @@ class CAAudioUnitSink
     bool         mute(bool mute);
     bool         pause();
     void         drain();
-    double       getDelay();
+    void         getDelay(AEDelayStatus& status);
     double       cacheSize();
     unsigned int write(uint8_t *data, unsigned int byte_count);
     unsigned int chunkSize() { return m_bufferDuration * m_sampleRate; }
@@ -114,14 +114,11 @@ class CAAudioUnitSink
     static void sessionPropertyCallback(void *inClientData,
                   AudioSessionPropertyID inID, UInt32 inDataSize, const void *inData);
 
-    static void sessionInterruptionCallback(void *inClientData, UInt32 inInterruption);
-
     static OSStatus renderCallback(void *inRefCon, AudioUnitRenderActionFlags *ioActionFlags,
                   const AudioTimeStamp *inTimeStamp, UInt32 inOutputBusNumber, UInt32 inNumberFrames,
                   AudioBufferList *ioData);
 
     bool                m_setup;
-    bool                m_initialized;
     bool                m_activated;
     AudioUnit           m_audioUnit;
     AudioStreamBasicDescription m_outputFormat;
@@ -139,15 +136,20 @@ class CAAudioUnitSink
     bool                m_playing;
     bool                m_playing_saved;
     volatile bool       m_started;
+
+    CAESpinSection      m_render_section;
+    volatile int64_t    m_render_timestamp;
+    volatile uint32_t   m_render_frames;
 };
 
 CAAudioUnitSink::CAAudioUnitSink()
-: m_initialized(false)
-, m_activated(false)
+: m_activated(false)
 , m_buffer(NULL)
 , m_playing(false)
 , m_playing_saved(false)
 , m_started(false)
+, m_render_timestamp(0)
+, m_render_frames(0)
 {
 }
 
@@ -215,13 +217,18 @@ bool CAAudioUnitSink::pause()
   return m_playing;
 }
 
-double CAAudioUnitSink::getDelay()
+void CAAudioUnitSink::getDelay(AEDelayStatus& status)
 {
-  double delay = (double)m_buffer->GetReadSize() / m_frameSize;
-  delay /= m_sampleRate;
-  delay += m_bufferDuration + m_outputLatency;
+  CAESpinLock lock(m_render_section);
+  do
+  {
+    status.delay  = (double)m_buffer->GetReadSize() / m_frameSize;
+    status.delay += (double)m_render_frames;
+    status.tick   = m_render_timestamp;
+  } while(lock.retry());
 
-  return delay;
+  status.delay /= m_sampleRate;
+  status.delay += m_bufferDuration + m_outputLatency;
 }
 
 double CAAudioUnitSink::cacheSize()
@@ -283,12 +290,11 @@ void CAAudioUnitSink::drain()
 void CAAudioUnitSink::setCoreAudioBuffersize()
 {
 #if !TARGET_IPHONE_SIMULATOR
-  OSStatus status = noErr;
   // set the buffer size, this affects the number of samples
   // that get rendered every time the audio callback is fired.
   Float32 preferredBufferSize = 512 * m_outputFormat.mChannelsPerFrame / m_outputFormat.mSampleRate;
   CLog::Log(LOGNOTICE, "%s setting buffer duration to %f", __PRETTY_FUNCTION__, preferredBufferSize);
-  status = AudioSessionSetProperty(kAudioSessionProperty_PreferredHardwareIOBufferDuration,
+  OSStatus status = AudioSessionSetProperty(kAudioSessionProperty_PreferredHardwareIOBufferDuration,
                                    sizeof(preferredBufferSize), &preferredBufferSize);
   if (status != noErr)
     CLog::Log(LOGWARNING, "%s preferredBufferSize couldn't be set (error: %d)", __PRETTY_FUNCTION__, (int)status);
@@ -335,25 +341,12 @@ bool CAAudioUnitSink::setupAudio()
   if (m_setup && m_audioUnit)
     return true;
 
-  // Audio Session Setup
-  UInt32 sessionCategory = kAudioSessionCategory_MediaPlayback;
-  status = AudioSessionSetProperty(kAudioSessionProperty_AudioCategory,
-                                   sizeof(sessionCategory), &sessionCategory);
-  if (status != noErr)
-  {
-    CLog::Log(LOGERROR, "%s error setting sessioncategory (error: %d)", __PRETTY_FUNCTION__, (int)status);
-    return false;
-  }
-
   AudioSessionAddPropertyListener(kAudioSessionProperty_AudioRouteChange,
     sessionPropertyCallback, this);
 
   AudioSessionAddPropertyListener(kAudioSessionProperty_CurrentHardwareOutputVolume,
     sessionPropertyCallback, this);
  
-  if (AudioSessionSetActive(true) != noErr)
-    return false;
-
   // Audio Unit Setup
   // Describe a default output unit.
   AudioComponentDescription description = {};
@@ -458,17 +451,6 @@ bool CAAudioUnitSink::activateAudioSession()
 {
   if (!m_activated)
   {
-    if (!m_initialized)
-    {
-      OSStatus osstat = AudioSessionInitialize(NULL, kCFRunLoopDefaultMode, sessionInterruptionCallback, this);
-      if (osstat == kAudioSessionNoError || osstat == kAudioSessionAlreadyInitialized)
-        m_initialized = true;
-      else
-      {
-        CLog::Log(LOGERROR, "%s error initializing audio session (error: %d)", __PRETTY_FUNCTION__, (int)osstat);
-        return false;
-      }
-    }
     if (checkAudioRoute() && setupAudio())
       m_activated = true;
   }
@@ -483,7 +465,6 @@ void CAAudioUnitSink::deactivateAudioSession()
     pause();
     AudioUnitUninitialize(m_audioUnit);
     AudioComponentInstanceDispose(m_audioUnit), m_audioUnit = NULL;
-    AudioSessionSetActive(false);
     AudioSessionRemovePropertyListenerWithUserData(kAudioSessionProperty_AudioRouteChange,
       sessionPropertyCallback, this);
     AudioSessionRemovePropertyListenerWithUserData(kAudioSessionProperty_CurrentHardwareOutputVolume,
@@ -511,27 +492,6 @@ void CAAudioUnitSink::sessionPropertyCallback(void *inClientData,
   }
 }
 
-void CAAudioUnitSink::sessionInterruptionCallback(void *inClientData, UInt32 inInterruption)
-{    
-  CAAudioUnitSink *sink = (CAAudioUnitSink*)inClientData;
-
-  if (inInterruption == kAudioSessionBeginInterruption)
-  {
-    CLog::Log(LOGDEBUG, "Bgn interuption");
-    sink->m_playing_saved = sink->m_playing;
-    sink->pause();
-  }
-  else if (inInterruption == kAudioSessionEndInterruption)
-  {
-    CLog::Log(LOGDEBUG, "End interuption");
-    if (sink->m_playing_saved)
-    {
-      sink->m_playing_saved = false;
-      sink->play(sink->m_mute);
-    }
-  }
-}
-
 inline void LogLevel(unsigned int got, unsigned int wanted)
 {
   static unsigned int lastReported = INT_MAX;
@@ -552,6 +512,7 @@ OSStatus CAAudioUnitSink::renderCallback(void *inRefCon, AudioUnitRenderActionFl
 {
   CAAudioUnitSink *sink = (CAAudioUnitSink*)inRefCon;
 
+  sink->m_render_section.enter();
   sink->m_started = true;
 
   for (unsigned int i = 0; i < ioData->mNumberBuffers; i++)
@@ -565,6 +526,10 @@ OSStatus CAAudioUnitSink::renderCallback(void *inRefCon, AudioUnitRenderActionFl
     if (bytes == 0)
       *ioActionFlags |= kAudioUnitRenderAction_OutputIsSilence;
   }
+
+  sink->m_render_timestamp = inTimeStamp->mHostTime;
+  sink->m_render_frames    = inNumberFrames;
+  sink->m_render_section.leave();
   // tell the sink we're good for more data
   condVar.notifyAll();
 
@@ -580,11 +545,6 @@ static void EnumerateDevices(AEDeviceInfoList &list)
   device.m_deviceName = "default";
   device.m_displayName = "Default";
   device.m_displayNameExtra = "";
-#if defined(TARGET_DARWIN_IOS_ATV2)
-  device.m_deviceType = AE_DEVTYPE_IEC958;
-  device.m_dataFormats.push_back(AE_FMT_AC3);
-  device.m_dataFormats.push_back(AE_FMT_DTS);
-#else
   // TODO screen changing on ios needs to call
   // devices changed once this is available in activae
   if (g_Windowing.GetCurrentScreen() > 0)
@@ -595,7 +555,6 @@ static void EnumerateDevices(AEDeviceInfoList &list)
   }
   else
     device.m_deviceType = AE_DEVTYPE_PCM;
-#endif
 
   // add channel info
   CAEChannelInfo channel_info;
@@ -615,9 +574,7 @@ static void EnumerateDevices(AEDeviceInfoList &list)
   device.m_dataFormats.push_back(AE_FMT_S16LE);
   //device.m_dataFormats.push_back(AE_FMT_S24LE3);
   //device.m_dataFormats.push_back(AE_FMT_S32LE);
-  // AE_FMT_FLOAT is 3% slower on atv2
-  // then S16LE - so leave it out for now
-  //device.m_dataFormats.push_back(AE_FMT_FLOAT);
+  device.m_dataFormats.push_back(AE_FMT_FLOAT);
 
   CLog::Log(LOGDEBUG, "EnumerateDevices:Device(%s)" , device.m_deviceName.c_str());
 
@@ -659,13 +616,9 @@ bool CAESinkDARWINIOS::Initialize(AEAudioFormat &format, std::string &device)
 
   AudioStreamBasicDescription audioFormat = {};
 
-  // AE_FMT_FLOAT is 3% slower on atv2
-  // then S16LE - so leave it out for now
-  // just leave the code commented in here
-  // as it might come handy at some point maybe ...
-  //if (format.m_dataFormat == AE_FMT_FLOAT)
-  //  audioFormat.mFormatFlags    |= kLinearPCMFormatFlagIsFloat;
-  //else// this will be selected when AE wants AC3 or DTS or anything other then float
+  if (format.m_dataFormat == AE_FMT_FLOAT)
+    audioFormat.mFormatFlags    |= kLinearPCMFormatFlagIsFloat;
+  else// this will be selected when AE wants AC3 or DTS or anything other then float
   {
     audioFormat.mFormatFlags    |= kLinearPCMFormatFlagIsSignedInteger;
     if (AE_IS_RAW(format.m_dataFormat))
@@ -724,7 +677,6 @@ bool CAESinkDARWINIOS::Initialize(AEAudioFormat &format, std::string &device)
   format.m_sampleRate = m_audioSink->getRealisedSampleRate();
   m_format = format;
 
-  m_volume_changed = false;
   m_audioSink->play(false);
 
   return true;
@@ -736,18 +688,12 @@ void CAESinkDARWINIOS::Deinitialize()
   m_audioSink = NULL;
 }
 
-bool CAESinkDARWINIOS::IsCompatible(const AEAudioFormat &format, const std::string &device)
-{
-  return ((m_format.m_sampleRate    == format.m_sampleRate) &&
-          (m_format.m_dataFormat    == format.m_dataFormat) &&
-          (m_format.m_channelLayout == format.m_channelLayout));
-}
-
-double CAESinkDARWINIOS::GetDelay()
+void CAESinkDARWINIOS::GetDelay(AEDelayStatus& status)
 {
   if (m_audioSink)
-    return m_audioSink->getDelay();
-  return 0.0;
+    m_audioSink->getDelay(status);
+  else
+    status.SetDelay(0.0);
 }
 
 double CAESinkDARWINIOS::GetCacheTotal()
@@ -757,13 +703,13 @@ double CAESinkDARWINIOS::GetCacheTotal()
   return 0.0;
 }
 
-unsigned int CAESinkDARWINIOS::AddPackets(uint8_t *data, unsigned int frames, bool hasAudio, bool blocking)
+unsigned int CAESinkDARWINIOS::AddPackets(uint8_t **data, unsigned int frames, unsigned int offset)
 {
-  
+  uint8_t *buffer = data[0]+offset*m_format.m_frameSize;
 #if DO_440HZ_TONE_TEST
   if (m_format.m_dataFormat == AE_FMT_FLOAT)
   {
-    float *samples = (float*)data;
+    float *samples = (float*)buffer;
     for (unsigned int j = 0; j < frames ; j++)
     {
       float sample = SineWaveGeneratorNextSampleFloat(&m_SineWaveGenerator);
@@ -774,7 +720,7 @@ unsigned int CAESinkDARWINIOS::AddPackets(uint8_t *data, unsigned int frames, bo
   }
   else
   {
-    int16_t *samples = (int16_t*)data;
+    int16_t *samples = (int16_t*)buffer;
     for (unsigned int j = 0; j < frames ; j++)
     {
       int16_t sample = SineWaveGeneratorNextSampleInt16(&m_SineWaveGenerator);
@@ -784,7 +730,7 @@ unsigned int CAESinkDARWINIOS::AddPackets(uint8_t *data, unsigned int frames, bo
   }
 #endif
   if (m_audioSink)
-    return m_audioSink->write(data, frames);
+    return m_audioSink->write(buffer, frames);
   return 0;
 }
 
@@ -797,14 +743,6 @@ void CAESinkDARWINIOS::Drain()
 bool CAESinkDARWINIOS::HasVolume()
 {
   return false;
-}
-
-void  CAESinkDARWINIOS::SetVolume(float scale)
-{
-  // CoreAudio uses fixed steps, reverse scale back to percent
-  float gain = CAEUtil::ScaleToGain(scale);
-  m_volume = CAEUtil::GainToPercent(gain);
-  m_volume_changed = true;
 }
 
 void CAESinkDARWINIOS::EnumerateDevicesEx(AEDeviceInfoList &list, bool force)

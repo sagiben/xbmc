@@ -43,9 +43,9 @@ namespace EVENTCLIENT
     {
       actionType = 0;
     }
-    CEventAction(const char* action, unsigned char type)
+    CEventAction(const char* action, unsigned char type):
+      actionName(action)
     {
-      actionName = action;
       actionType = type;
     }
 
@@ -59,8 +59,6 @@ namespace EVENTCLIENT
     CEventButtonState()
     {
       m_iKeyCode   = 0;
-      m_mapName    = "";
-      m_buttonName = "";
       m_fAmount    = 0.0f;
       m_bUseAmount = false;
       m_bRepeat    = false;
@@ -76,12 +74,11 @@ namespace EVENTCLIENT
                       float fAmount,
                       bool isAxis,
                       bool bRepeat,
-                      bool bUseAmount
-      )
+                      bool bUseAmount):
+      m_buttonName(buttonName),
+      m_mapName(mapName)
     {
       m_iKeyCode   = iKeyCode;
-      m_buttonName = buttonName;
-      m_mapName    = mapName;
       m_fAmount    = fAmount;
       m_bUseAmount = bUseAmount;
       m_bRepeat    = bRepeat;
@@ -131,9 +128,9 @@ namespace EVENTCLIENT
       Initialize();
     }
 
-    CEventClient(SOCKETS::CAddress& addr)
+    CEventClient(SOCKETS::CAddress& addr):
+      m_remoteAddr(addr)
     {
-      m_remoteAddr = addr;
       Initialize();
     }
 
@@ -158,8 +155,8 @@ namespace EVENTCLIENT
 
     void RefreshSettings()
     {
-      m_iRepeatDelay = CSettings::Get().GetInt("services.esinitialdelay");
-      m_iRepeatSpeed = CSettings::Get().GetInt("services.escontinuousdelay");
+      m_iRepeatDelay = CSettings::GetInstance().GetInt(CSettings::SETTING_SERVICES_ESINITIALDELAY);
+      m_iRepeatSpeed = CSettings::GetInstance().GetInt(CSettings::SETTING_SERVICES_ESCONTINUOUSDELAY);
     }
 
     SOCKETS::CAddress& Address()

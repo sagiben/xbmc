@@ -23,7 +23,9 @@
 #include "cores/IAudioCallback.h"
 #include "include/xbmc_vis_types.h"
 #include "guilib/IRenderingCallback.h"
+#include "utils/rfft.h"
 
+#include <algorithm>
 #include <map>
 #include <list>
 #include <memory>
@@ -59,21 +61,23 @@ namespace ADDON
     CVisualisation(const cp_extension_t *ext) : CAddonDll<DllVisualisation, Visualisation, VIS_PROPS>(ext) {}
     virtual void OnInitialize(int iChannels, int iSamplesPerSec, int iBitsPerSample);
     virtual void OnAudioData(const float* pAudioData, int iAudioDataLength);
+    virtual bool IsInUse() const;
     bool Create(int x, int y, int w, int h, void *device);
-    void Start(int iChannels, int iSamplesPerSec, int iBitsPerSample, const CStdString &strSongName);
+    void Start(int iChannels, int iSamplesPerSec, int iBitsPerSample, const std::string &strSongName);
     void AudioData(const float *pAudioData, int iAudioDataLength, float *pFreqData, int iFreqDataLength);
     void Render();
     void Stop();
     void GetInfo(VIS_INFO *info);
     bool OnAction(VIS_ACTION action, void *param = NULL);
     bool UpdateTrack();
+    bool HasPresets() { return m_hasPresets; };
     bool HasSubModules() { return !m_submodules.empty(); }
     bool IsLocked();
     unsigned GetPreset();
-    CStdString GetPresetName();
-    bool GetPresetList(std::vector<CStdString>& vecpresets);
-    bool GetSubModuleList(std::vector<CStdString>& vecmodules);
-    static CStdString GetFriendlyName(const CStdString& vis, const CStdString& module);
+    std::string GetPresetName();
+    bool GetPresetList(std::vector<std::string>& vecpresets);
+    bool GetSubModuleList(std::vector<std::string>& vecmodules);
+    static std::string GetFriendlyName(const std::string& vis, const std::string& module);
     void Destroy();
 
   private:
@@ -90,9 +94,9 @@ namespace ADDON
     int m_height;
 
     // cached preset list
-    std::vector<CStdString> m_presets;
+    std::vector<std::string> m_presets;
     // cached submodule list
-    std::vector<CStdString> m_submodules;
+    std::vector<std::string> m_submodules;
     int m_currentModule;
 
     // audio properties
@@ -102,10 +106,12 @@ namespace ADDON
     std::list<CAudioBuffer*> m_vecBuffers;
     int m_iNumBuffers;        // Number of Audio buffers
     bool m_bWantsFreq;
-    float m_fFreq[2*AUDIO_BUFFER_SIZE];         // Frequency data
+    float m_fFreq[AUDIO_BUFFER_SIZE];         // Frequency data
     bool m_bCalculate_Freq;       // True if the vis wants freq data
+    bool m_hasPresets;
+    std::unique_ptr<RFFT> m_transform;
 
     // track information
-    CStdString m_AlbumThumb;
+    std::string m_AlbumThumb;
   };
 }

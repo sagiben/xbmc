@@ -23,9 +23,9 @@
 #include "dialogs/GUIDialogProgress.h"
 #include "guilib/GUIWindowManager.h"
 #include "log.h"
-#include "utils/TimeUtils.h"
 #include "utils/StringUtils.h"
 #include "URL.h"
+#include "utils/Variant.h"
 
 CAsyncFileCopy::CAsyncFileCopy() : CThread("AsyncFileCopy")
 {
@@ -41,7 +41,7 @@ CAsyncFileCopy::~CAsyncFileCopy()
   StopThread();
 }
 
-bool CAsyncFileCopy::Copy(const CStdString &from, const CStdString &to, const CStdString &heading)
+bool CAsyncFileCopy::Copy(const std::string &from, const std::string &to, const std::string &heading)
 {
   // reset the variables to their appropriate states
   m_from = from;
@@ -66,20 +66,19 @@ bool CAsyncFileCopy::Copy(const CStdString &from, const CStdString &to, const CS
     // start the dialog up as needed
     if (dlg && !dlg->IsDialogRunning() && (XbmcThreads::SystemClockMillis() - time) > 500) // wait 0.5 seconds before starting dialog
     {
-      dlg->SetHeading(heading);
-      dlg->SetLine(0, url1.GetWithoutUserDetails());
-      dlg->SetLine(1, url2.GetWithoutUserDetails());
+      dlg->SetHeading(CVariant{heading});
+      dlg->SetLine(0, CVariant{url1.GetWithoutUserDetails()});
+      dlg->SetLine(1, CVariant{url2.GetWithoutUserDetails()});
       dlg->SetPercentage(0);
-      dlg->StartModal();
+      dlg->Open();
     }
     // and update the dialog as we go
     if (dlg && dlg->IsDialogRunning())
     {
-      CStdString speedString = StringUtils::Format("%2.2f KB/s", m_speed / 1024);
-      dlg->SetHeading(heading);
-      dlg->SetLine(0, url1.Get());
-      dlg->SetLine(1, url2.Get());
-      dlg->SetLine(2, speedString);
+      dlg->SetHeading(CVariant{heading});
+      dlg->SetLine(0, CVariant{url1.Get()});
+      dlg->SetLine(1, CVariant{url2.Get()});
+      dlg->SetLine(2, CVariant{ StringUtils::Format("%2.2f KB/s", m_speed / 1024) });
       dlg->SetPercentage(m_percent);
       dlg->Progress();
       m_cancelled = dlg->IsCanceled();
@@ -102,7 +101,7 @@ void CAsyncFileCopy::Process()
 {
   try
   {
-    m_succeeded = XFILE::CFile::Cache(m_from, m_to, this);
+    m_succeeded = XFILE::CFile::Copy(m_from, m_to, this);
   }
   catch (...)
   {

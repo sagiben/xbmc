@@ -33,25 +33,21 @@
 #include "input/MouseStat.h"
 #include "input/touch/generic/GenericTouchActionHandler.h"
 #include "input/touch/generic/GenericTouchSwipeDetector.h"
-#include "input/windows/WINJoystick.h"
+#include "input/InputManager.h"
 #include "storage/MediaManager.h"
 #include "windowing/WindowingFactory.h"
 #include <dbt.h>
-#include "guilib/LocalizeStrings.h"
-#include "input/KeyboardStat.h"
 #include "guilib/GUIWindowManager.h"
 #include "guilib/GUIControl.h"       // for EVENT_RESULT
 #include "powermanagement/windows/Win32PowerSyscall.h"
 #include "Shlobj.h"
 #include "settings/AdvancedSettings.h"
-#include "settings/Settings.h"
 #include "peripherals/Peripherals.h"
 #include "utils/JobManager.h"
 #include "network/Zeroconf.h"
 #include "network/ZeroconfBrowser.h"
-#include "GUIUserMessages.h"
-#include "utils/CharsetConverter.h"
 #include "utils/StringUtils.h"
+#include "Util.h"
 
 #ifdef TARGET_WINDOWS
 
@@ -64,8 +60,6 @@ HWND g_hWnd = NULL;
 #endif
 
 #define ROTATE_ANGLE_DEGREE(arg) GID_ROTATE_ANGLE_FROM_ARGUMENT(LODWORD(arg)) * 180 / M_PI
-
-#define XBMC_arraysize(array)	(sizeof(array)/sizeof(array[0]))
 
 /* Masks for processing the windows KEYDOWN and KEYUP messages */
 #define REPEATED_KEYMASK  (1<<30)
@@ -99,7 +93,7 @@ void DIB_InitOSKeymap()
   LoadKeyboardLayout(current_layout, KLF_ACTIVATE);
 
   /* Map the VK keysyms */
-  for (int i = 0; i < XBMC_arraysize(VK_keymap); ++i)
+  for (int i = 0; i < ARRAY_SIZE(VK_keymap); ++i)
     VK_keymap[i] = XBMCK_UNKNOWN;
 
   VK_keymap[VK_BACK] = XBMCK_BACKSPACE;
@@ -337,7 +331,7 @@ static XBMC_keysym *TranslateKey(WPARAM vkey, UINT scancode, XBMC_keysym *keysym
     {
       keysym->unicode = vkey - VK_NUMPAD0 + '0';
     }
-    else if (ToUnicode((UINT)vkey, scancode, keystate, (LPWSTR)wchars, sizeof(wchars)/sizeof(wchars[0]), 0) > 0)
+    else if (ToUnicode((UINT)vkey, scancode, keystate, (LPWSTR)wchars, ARRAY_SIZE(wchars), 0) > 0)
     {
       keysym->unicode = wchars[0];
     }
@@ -435,7 +429,12 @@ LRESULT CALLBACK CWinEventsWin32::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, L
     case WM_QUIT:
     case WM_DESTROY:
       if (hDeviceNotify)
-        UnregisterDeviceNotification(hDeviceNotify);
+      {
+        if (UnregisterDeviceNotification(hDeviceNotify))
+          hDeviceNotify = 0;
+        else
+          CLog::Log(LOGNOTICE, "%s: UnregisterDeviceNotification failed (%d)", __FUNCTION__, GetLastError());
+      }
       newEvent.type = XBMC_QUIT;
       m_pEventFunc(newEvent);
       break;
@@ -451,7 +450,7 @@ LRESULT CALLBACK CWinEventsWin32::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, L
     case WM_ACTIVATE:
       {
         if( WA_INACTIVE != wParam )
-          g_Joystick.Reinitialize();
+          CInputManager::GetInstance().ReInitializeJoystick();
 
         bool active = g_application.GetRenderGUI();
         if (HIWORD(wParam))
@@ -473,10 +472,7 @@ LRESULT CALLBACK CWinEventsWin32::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, L
           }
         }
         if (g_application.GetRenderGUI() != active)
-        {
           g_Windowing.NotifyAppActiveChange(g_application.GetRenderGUI());
-          g_application.SetInBackground(!g_application.GetRenderGUI());
-        }
         CLog::Log(LOGDEBUG, __FUNCTION__"Window is %s", g_application.GetRenderGUI() ? "active" : "inactive");
       }
       break;
@@ -486,7 +482,7 @@ LRESULT CALLBACK CWinEventsWin32::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, L
       g_Windowing.NotifyAppFocusChange(g_application.m_AppFocused);
       if (uMsg == WM_KILLFOCUS)
       {
-        CStdString procfile;
+        std::string procfile;
         if (CWIN32Util::GetFocussedProcess(procfile))
           CLog::Log(LOGDEBUG, __FUNCTION__": Focus switched to process %s", procfile.c_str());
       }
@@ -499,7 +495,7 @@ LRESULT CALLBACK CWinEventsWin32::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, L
         case SC_MONITORPOWER:
           if (g_application.m_pPlayer->IsPlaying() || g_application.m_pPlayer->IsPausedPlayback())
             return 0;
-          else if(CSettings::Get().GetInt("powermanagement.displaysoff") == 0)
+          else if(CSettings::GetInstance().GetInt(CSettings::SETTING_POWERMANAGEMENT_DISPLAYSOFF) == 0)
             return 0;
           break;
         case SC_SCREENSAVE:
@@ -679,7 +675,7 @@ LRESULT CALLBACK CWinEventsWin32::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, L
 
       CLog::Log(LOGDEBUG, __FUNCTION__": window resize event");
 
-      if (!g_Windowing.IsAlteringWindow() && newEvent.resize.w > 0 && newEvent.resize.h > 0)
+      if (g_application.GetRenderGUI() && !g_Windowing.IsAlteringWindow() && newEvent.resize.w > 0 && newEvent.resize.h > 0)
         m_pEventFunc(newEvent);
 
       return(0);
@@ -690,7 +686,7 @@ LRESULT CALLBACK CWinEventsWin32::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, L
 
       CLog::Log(LOGDEBUG, __FUNCTION__": window move event");
 
-      if (!g_Windowing.IsAlteringWindow())
+      if (g_application.GetRenderGUI() && !g_Windowing.IsAlteringWindow())
         m_pEventFunc(newEvent);
 
       return(0);
@@ -760,7 +756,7 @@ LRESULT CALLBACK CWinEventsWin32::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, L
             if (((_DEV_BROADCAST_HEADER*) lParam)->dbcd_devicetype == DBT_DEVTYP_DEVICEINTERFACE)
             {
               g_peripherals.TriggerDeviceScan(PERIPHERAL_BUS_USB);
-              g_Joystick.Reinitialize();
+              CInputManager::GetInstance().ReInitializeJoystick();
             }
             // check if an usb or optical media was inserted or removed
             if (((_DEV_BROADCAST_HEADER*) lParam)->dbcd_devicetype == DBT_DEVTYP_VOLUME)
@@ -769,7 +765,7 @@ LRESULT CALLBACK CWinEventsWin32::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, L
               // optical medium
               if (lpdbv -> dbcv_flags & DBTF_MEDIA)
               {
-                CStdString strdrive = StringUtils::Format("%c:\\", CWIN32Util::FirstDriveFromMask(lpdbv ->dbcv_unitmask));
+                std::string strdrive = StringUtils::Format("%c:", CWIN32Util::FirstDriveFromMask(lpdbv ->dbcv_unitmask));
                 if(wParam == DBT_DEVICEARRIVAL)
                 {
                   CLog::Log(LOGDEBUG, __FUNCTION__": Drive %s Media has arrived.", strdrive.c_str());
@@ -850,7 +846,7 @@ void CWinEventsWin32::OnGestureNotify(HWND hWnd, LPARAM lParam)
 
   // send a message to see if a control wants any
   int gestures = 0;
-  if ((gestures = CGenericTouchActionHandler::Get().QuerySupportedGestures((float)point.x, (float)point.y)) != EVENT_RESULT_UNHANDLED)
+  if ((gestures = CGenericTouchActionHandler::GetInstance().QuerySupportedGestures((float)point.x, (float)point.y)) != EVENT_RESULT_UNHANDLED)
   {
     if (gestures & EVENT_RESULT_ZOOM)
       gc[0].dwWant |= GC_ZOOM;
@@ -869,7 +865,7 @@ void CWinEventsWin32::OnGestureNotify(HWND hWnd, LPARAM lParam)
       gc[2].dwWant |= GC_PAN | GC_PAN_WITH_SINGLE_FINGER_VERTICALLY | GC_PAN_WITH_SINGLE_FINGER_HORIZONTALLY | GC_PAN_WITH_GUTTER;
 
       // create a new touch swipe detector
-      m_touchSwipeDetector = new CGenericTouchSwipeDetector(&CGenericTouchActionHandler::Get(), 160.0f);
+      m_touchSwipeDetector = new CGenericTouchSwipeDetector(&CGenericTouchActionHandler::GetInstance(), 160.0f);
     }
 
     gc[0].dwBlock = gc[0].dwWant ^ 0x01;
@@ -913,12 +909,12 @@ void CWinEventsWin32::OnGesture(HWND hWnd, LPARAM lParam)
       m_touchPointer.down = m_touchPointer.current;
       m_originalZoomDistance = 0;
 
-      CGenericTouchActionHandler::Get().OnTouchGestureStart((float)point.x, (float)point.y);
+      CGenericTouchActionHandler::GetInstance().OnTouchGestureStart((float)point.x, (float)point.y);
     }
     break;
 
   case GID_END:
-    CGenericTouchActionHandler::Get().OnTouchGestureEnd((float)point.x, (float)point.y, 0.0f, 0.0f, 0.0f, 0.0f);
+    CGenericTouchActionHandler::GetInstance().OnTouchGestureEnd((float)point.x, (float)point.y, 0.0f, 0.0f, 0.0f, 0.0f);
     break;
 
   case GID_PAN:
@@ -930,7 +926,7 @@ void CWinEventsWin32::OnGesture(HWND hWnd, LPARAM lParam)
       float velocityX, velocityY;
       m_touchPointer.velocity(velocityX, velocityY);
 
-      CGenericTouchActionHandler::Get().OnTouchGesturePan(m_touchPointer.current.x, m_touchPointer.current.y,
+      CGenericTouchActionHandler::GetInstance().OnTouchGesturePan(m_touchPointer.current.x, m_touchPointer.current.y,
                                                           m_touchPointer.current.x - m_touchPointer.last.x, m_touchPointer.current.y - m_touchPointer.last.y,
                                                           velocityX, velocityY);
 
@@ -959,7 +955,7 @@ void CWinEventsWin32::OnGesture(HWND hWnd, LPARAM lParam)
       if (gi.dwFlags == GF_BEGIN)
         break;
 
-      CGenericTouchActionHandler::Get().OnRotate((float)point.x, (float)point.y,
+      CGenericTouchActionHandler::GetInstance().OnRotate((float)point.x, (float)point.y,
                                                  -(float)ROTATE_ANGLE_DEGREE(gi.ullArguments));
     }
     break;
@@ -976,13 +972,13 @@ void CWinEventsWin32::OnGesture(HWND hWnd, LPARAM lParam)
       if (m_originalZoomDistance == 0)
         break;
 
-      CGenericTouchActionHandler::Get().OnZoomPinch((float)point.x, (float)point.y,
+      CGenericTouchActionHandler::GetInstance().OnZoomPinch((float)point.x, (float)point.y,
                                                     (float)LODWORD(gi.ullArguments) / (float)m_originalZoomDistance);
     }
     break;
 
   case GID_TWOFINGERTAP:
-    CGenericTouchActionHandler::Get().OnTap((float)point.x, (float)point.y, 2);
+    CGenericTouchActionHandler::GetInstance().OnTap((float)point.x, (float)point.y, 2);
     break;
 
   case GID_PRESSANDTAP:

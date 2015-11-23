@@ -19,11 +19,12 @@
  *
  */
 
-#include <list>
 #include <map>
+#include <list>
+#include <vector>
+#include <utility>
 
 #include "system.h"
-#include "threads/CriticalSection.h"
 
 #include "cores/AudioEngine/Utils/AEAudioFormat.h"
 
@@ -57,8 +58,9 @@ enum AEQuality
   AE_QUALITY_HIGH       = 50, /* Best sound processing quality */
 
   /* Optional quality levels */
-  AE_QUALITY_REALLYHIGH = 100 /* Uncompromised optional quality level,
+  AE_QUALITY_REALLYHIGH = 100, /* Uncompromised optional quality level,
                                usually with unmeasurable and unnoticeable improvement */ 
+  AE_QUALITY_GPU        = 101, /* GPU acceleration */
 };
 
 /**
@@ -156,7 +158,7 @@ public:
    * @param options A bit field of stream options (see: enum AEStreamOptions)
    * @return a new IAEStream that will accept data in the requested format
    */
-  virtual IAEStream *MakeStream(enum AEDataFormat dataFormat, unsigned int sampleRate, unsigned int encodedSampleRate, CAEChannelInfo channelLayout, unsigned int options = 0) = 0;
+  virtual IAEStream *MakeStream(enum AEDataFormat dataFormat, unsigned int sampleRate, unsigned int encodedSampleRate, CAEChannelInfo& channelLayout, unsigned int options = 0) = 0;
 
   /**
    * This method will remove the specifyed stream from the engine.
@@ -211,6 +213,18 @@ public:
    */
   virtual bool SupportsSilenceTimeout() { return false; }
 
+  /**
+   * Returns true if the AudioEngine is currently configured for stereo audio
+   * @returns true if the AudioEngine is currently configured for stereo audio
+   */
+  virtual bool HasStereoAudioChannelCount() { return false; }
+
+  /**
+   * Returns true if the AudioEngine is currently configured for HD audio (more than 5.1)
+   * @returns true if the AudioEngine is currently configured for HD audio (more than 5.1)
+   */
+  virtual bool HasHDAudioChannelCount() { return true; }
+
   virtual void RegisterAudioCallback(IAudioCallback* pCallback) {}
 
   virtual void UnregisterAudioCallback() {}
@@ -237,5 +251,18 @@ public:
    * Instruct AE to re-initialize, e.g. after ELD change event
    */
   virtual void DeviceChange() {return; }
+
+  /**
+   * Indicates if dsp addon system is active.
+   */
+  virtual bool HasDSP() { return false; };
+
+  /**
+   * Get the current sink data format
+   *
+   * @param Current sink data format. For more details see AEAudioFormat.
+   * @return Returns true on success, else false.
+   */
+  virtual bool GetCurrentSinkFormat(AEAudioFormat &SinkFormat) { return false; }
 };
 

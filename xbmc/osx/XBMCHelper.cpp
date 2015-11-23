@@ -27,6 +27,7 @@
 #include "XBMCHelper.h"
 #include "PlatformDefs.h"
 #include "Util.h"
+#include "CompileInfo.h"
 
 #include "dialogs/GUIDialogOK.h"
 #include "dialogs/GUIDialogYesNo.h"
@@ -66,8 +67,8 @@ XBMCHelper::XBMCHelper()
   , m_port(0)
   , m_errorStarting(false)
 {
-  // Compute the XBMC_HOME path.
-  CStdString homePath;
+  // Compute the KODI_HOME path.
+  std::string homePath;
   CUtil::GetHomePath(homePath);
   m_homepath = homePath;
 
@@ -87,7 +88,7 @@ XBMCHelper::XBMCHelper()
 
   // Compute the configuration file name.
   m_configFile = getenv("HOME");
-  m_configFile += "/Library/Application Support/XBMC/XBMCHelper.conf";
+  m_configFile += "/Library/Application Support/" + std::string(CCompileInfo::GetAppName()) + "/XBMCHelper.conf";
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -97,7 +98,7 @@ bool XBMCHelper::OnSettingChanging(const CSetting *setting)
     return false;
 
   const std::string &settingId = setting->GetId();
-  if (settingId == "input.appleremotemode")
+  if (settingId == CSettings::SETTING_INPUT_APPLEREMOTEMODE)
   {
     int remoteMode = ((CSettingInt*)setting)->GetValue();
 
@@ -105,7 +106,7 @@ bool XBMCHelper::OnSettingChanging(const CSetting *setting)
     if (remoteMode != APPLE_REMOTE_DISABLED)
     {
       // if starting the event server fails, we have to revert the change
-      if (!CSettings::Get().SetBool("services.esenabled", true))
+      if (!CSettings::GetInstance().SetBool("services.esenabled", true))
         return false;
     }
 
@@ -113,7 +114,7 @@ bool XBMCHelper::OnSettingChanging(const CSetting *setting)
     if (IsRunning() && GetMode() != remoteMode)
     {
       bool cancelled;
-      if (!CGUIDialogYesNo::ShowAndGetInput(13144, 13145, 13146, 13147, -1, -1, cancelled, 10000))
+      if (!CGUIDialogYesNo::ShowAndGetInput(CVariant{13144}, CVariant{13145}, cancelled, CVariant{""}, CVariant{""}, 10000))
         return false;
       // reload configuration
       else
@@ -126,9 +127,14 @@ bool XBMCHelper::OnSettingChanging(const CSetting *setting)
     if (ErrorStarting() == true)
     {
       // inform user about error
-      CGUIDialogOK::ShowAndGetInput(13620, 13621, 20022, 20022);
+      CGUIDialogOK::ShowAndGetInput(CVariant{13620}, CVariant{13621});
       return false;
     }
+  }
+
+  if (settingId == CSettings::SETTING_INPUT_APPLEREMOTEALWAYSON)
+  {
+    HandleLaunchAgent();
   }
 
   return true;
@@ -165,15 +171,13 @@ void XBMCHelper::Configure()
 {
   int oldMode = m_mode;
   int oldDelay = m_sequenceDelay;
-  int oldAlwaysOn = m_alwaysOn;
   int oldPort = m_port;
 
   // Read the new configuration.
   m_errorStarting = false;
-  m_mode = CSettings::Get().GetInt("input.appleremotemode");
-  m_sequenceDelay = CSettings::Get().GetInt("input.appleremotesequencetime");
-  m_alwaysOn = CSettings::Get().GetBool("input.appleremotealwayson");
-  m_port = CSettings::Get().GetInt("services.esport");
+  m_mode = CSettings::GetInstance().GetInt(CSettings::SETTING_INPUT_APPLEREMOTEMODE);
+  m_sequenceDelay = CSettings::GetInstance().GetInt(CSettings::SETTING_INPUT_APPLEREMOTESEQUENCETIME);
+  m_port = CSettings::GetInstance().GetInt(CSettings::SETTING_SERVICES_ESPORT);
 
 
   // Don't let it enable if sofa control or remote buddy is around.
@@ -184,7 +188,7 @@ void XBMCHelper::Configure()
       m_errorStarting = true;
 
     m_mode = APPLE_REMOTE_DISABLED;
-    CSettings::Get().SetInt("input.appleremotemode", APPLE_REMOTE_DISABLED);
+    CSettings::GetInstance().SetInt(CSettings::SETTING_INPUT_APPLEREMOTEMODE, APPLE_REMOTE_DISABLED);
   }
 
   // New configuration.
@@ -252,6 +256,14 @@ void XBMCHelper::Configure()
   // Turning on.
   if (oldMode == APPLE_REMOTE_DISABLED && m_mode != APPLE_REMOTE_DISABLED)
     Start();
+
+  HandleLaunchAgent();
+}
+
+void XBMCHelper::HandleLaunchAgent()
+{
+  int oldAlwaysOn = m_alwaysOn;
+  m_alwaysOn = CSettings::GetInstance().GetBool(CSettings::SETTING_INPUT_APPLEREMOTEALWAYSON);
 
   // Installation/uninstallation.
   if (oldAlwaysOn == false && m_alwaysOn == true)

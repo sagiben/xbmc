@@ -21,26 +21,23 @@
 #include "DVDInputStreams/DVDInputStream.h"
 #include "DVDDemuxBXA.h"
 #include "DVDDemuxUtils.h"
-#include "utils/log.h"
 #include "utils/StringUtils.h"
 #include "../DVDClock.h"
 
 // AirTunes audio Demuxer.
 
-using namespace std;
-
 class CDemuxStreamAudioBXA
   : public CDemuxStreamAudio
 {
   CDVDDemuxBXA  *m_parent;
-  string         m_codec;
+  std::string    m_codec;
 public:
-  CDemuxStreamAudioBXA(CDVDDemuxBXA *parent, const string& codec)
+  CDemuxStreamAudioBXA(CDVDDemuxBXA *parent, const std::string& codec)
     : m_parent(parent)
     , m_codec(codec)
 
   {}
-  void GetStreamInfo(string& strInfo)
+  void GetStreamInfo(std::string& strInfo)
   {
     strInfo = StringUtils::Format("%s", m_codec.c_str());
   }
@@ -186,7 +183,7 @@ std::string CDVDDemuxBXA::GetFileName()
     return "";
 }
 
-void CDVDDemuxBXA::GetStreamCodecName(int iStreamId, CStdString &strName)
+void CDVDDemuxBXA::GetStreamCodecName(int iStreamId, std::string &strName)
 {
   if (m_stream && iStreamId == 0)
     strName = "BXA";

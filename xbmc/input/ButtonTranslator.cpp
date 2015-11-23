@@ -1,6 +1,6 @@
 /*
- *      Copyright (C) 2005-2013 Team XBMC
- *      http://xbmc.org
+ *      Copyright (C) 2005-2015 Team XBMC
+ *      http://kodi.tv
  *
  *  This Program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -13,25 +13,31 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with XBMC; see the file COPYING.  If not, see
+ *  along with Kodi; see the file COPYING.  If not, see
  *  <http://www.gnu.org/licenses/>.
  *
  */
 
-#include "system.h"
-#include "interfaces/Builtins.h"
 #include "ButtonTranslator.h"
-#include "profiles/ProfilesManager.h"
-#include "utils/URIUtils.h"
-#include "guilib/Key.h"
-#include "guilib/WindowIDs.h"
-#include "input/XBMC_keysym.h"
-#include "input/XBMC_keytable.h"
-#include "filesystem/File.h"
-#include "filesystem/Directory.h"
+
+#include <algorithm>
+#include <utility>
+
 #include "FileItem.h"
-#include "utils/StringUtils.h"
+#include "filesystem/Directory.h"
+#include "filesystem/File.h"
+#include "guilib/WindowIDs.h"
+#include "input/Key.h"
+#include "input/MouseStat.h"
+#include "input/XBMC_keytable.h"
+#include "interfaces/builtins/Builtins.h"
+#include "profiles/ProfilesManager.h"
+#include "system.h"
+#include "Util.h"
 #include "utils/log.h"
+#include "utils/RegExp.h"
+#include "utils/StringUtils.h"
+#include "utils/URIUtils.h"
 #include "utils/XBMCTinyXML.h"
 #include "XBIRRemote.h"
 
@@ -43,7 +49,6 @@
 
 #define JOYSTICK_DEFAULT_MAP "_xbmc_"
 
-using namespace std;
 using namespace XFILE;
 
 typedef struct
@@ -60,391 +65,402 @@ typedef struct
 
 static const ActionMapping actions[] =
 {
-        {"left"              , ACTION_MOVE_LEFT },
-        {"right"             , ACTION_MOVE_RIGHT},
-        {"up"                , ACTION_MOVE_UP   },
-        {"down"              , ACTION_MOVE_DOWN },
-        {"pageup"            , ACTION_PAGE_UP   },
-        {"pagedown"          , ACTION_PAGE_DOWN},
-        {"select"            , ACTION_SELECT_ITEM},
-        {"highlight"         , ACTION_HIGHLIGHT_ITEM},
-        {"parentdir"         , ACTION_NAV_BACK},       // backward compatibility
-        {"parentfolder"      , ACTION_PARENT_DIR},
-        {"back"              , ACTION_NAV_BACK},
-        {"previousmenu"      , ACTION_PREVIOUS_MENU},
-        {"info"              , ACTION_SHOW_INFO},
-        {"pause"             , ACTION_PAUSE},
-        {"stop"              , ACTION_STOP},
-        {"skipnext"          , ACTION_NEXT_ITEM},
-        {"skipprevious"      , ACTION_PREV_ITEM},
-        {"fullscreen"        , ACTION_SHOW_GUI},
-        {"aspectratio"       , ACTION_ASPECT_RATIO},
-        {"stepforward"       , ACTION_STEP_FORWARD},
-        {"stepback"          , ACTION_STEP_BACK},
-        {"bigstepforward"    , ACTION_BIG_STEP_FORWARD},
-        {"bigstepback"       , ACTION_BIG_STEP_BACK},
-        {"chapterorbigstepforward", ACTION_CHAPTER_OR_BIG_STEP_FORWARD},
-        {"chapterorbigstepback"   , ACTION_CHAPTER_OR_BIG_STEP_BACK},
-        {"osd"               , ACTION_SHOW_OSD},
-        {"showsubtitles"     , ACTION_SHOW_SUBTITLES},
-        {"nextsubtitle"      , ACTION_NEXT_SUBTITLE},
-        {"codecinfo"         , ACTION_SHOW_CODEC},
-        {"nextpicture"       , ACTION_NEXT_PICTURE},
-        {"previouspicture"   , ACTION_PREV_PICTURE},
-        {"zoomout"           , ACTION_ZOOM_OUT},
-        {"zoomin"            , ACTION_ZOOM_IN},
-        {"playlist"          , ACTION_SHOW_PLAYLIST},
-        {"queue"             , ACTION_QUEUE_ITEM},
-        {"zoomnormal"        , ACTION_ZOOM_LEVEL_NORMAL},
-        {"zoomlevel1"        , ACTION_ZOOM_LEVEL_1},
-        {"zoomlevel2"        , ACTION_ZOOM_LEVEL_2},
-        {"zoomlevel3"        , ACTION_ZOOM_LEVEL_3},
-        {"zoomlevel4"        , ACTION_ZOOM_LEVEL_4},
-        {"zoomlevel5"        , ACTION_ZOOM_LEVEL_5},
-        {"zoomlevel6"        , ACTION_ZOOM_LEVEL_6},
-        {"zoomlevel7"        , ACTION_ZOOM_LEVEL_7},
-        {"zoomlevel8"        , ACTION_ZOOM_LEVEL_8},
-        {"zoomlevel9"        , ACTION_ZOOM_LEVEL_9},
-        {"nextcalibration"   , ACTION_CALIBRATE_SWAP_ARROWS},
-        {"resetcalibration"  , ACTION_CALIBRATE_RESET},
-        {"analogmove"        , ACTION_ANALOG_MOVE},
-        {"rotate"            , ACTION_ROTATE_PICTURE_CW},
-        {"rotateccw"         , ACTION_ROTATE_PICTURE_CCW},
-        {"close"             , ACTION_NAV_BACK}, // backwards compatibility
-        {"subtitledelayminus", ACTION_SUBTITLE_DELAY_MIN},
-        {"subtitledelay"     , ACTION_SUBTITLE_DELAY},
-        {"subtitledelayplus" , ACTION_SUBTITLE_DELAY_PLUS},
-        {"audiodelayminus"   , ACTION_AUDIO_DELAY_MIN},
-        {"audiodelay"        , ACTION_AUDIO_DELAY},
-        {"audiodelayplus"    , ACTION_AUDIO_DELAY_PLUS},
-        {"subtitleshiftup"   , ACTION_SUBTITLE_VSHIFT_UP},
-        {"subtitleshiftdown" , ACTION_SUBTITLE_VSHIFT_DOWN},
-        {"subtitlealign"     , ACTION_SUBTITLE_ALIGN},
-        {"audionextlanguage" , ACTION_AUDIO_NEXT_LANGUAGE},
-        {"verticalshiftup"   , ACTION_VSHIFT_UP},
-        {"verticalshiftdown" , ACTION_VSHIFT_DOWN},
-        {"nextresolution"    , ACTION_CHANGE_RESOLUTION},
-        {"audiotoggledigital", ACTION_TOGGLE_DIGITAL_ANALOG},
-        {"number0"           , REMOTE_0},
-        {"number1"           , REMOTE_1},
-        {"number2"           , REMOTE_2},
-        {"number3"           , REMOTE_3},
-        {"number4"           , REMOTE_4},
-        {"number5"           , REMOTE_5},
-        {"number6"           , REMOTE_6},
-        {"number7"           , REMOTE_7},
-        {"number8"           , REMOTE_8},
-        {"number9"           , REMOTE_9},
-        {"osdleft"           , ACTION_OSD_SHOW_LEFT},
-        {"osdright"          , ACTION_OSD_SHOW_RIGHT},
-        {"osdup"             , ACTION_OSD_SHOW_UP},
-        {"osddown"           , ACTION_OSD_SHOW_DOWN},
-        {"osdselect"         , ACTION_OSD_SHOW_SELECT},
-        {"osdvalueplus"      , ACTION_OSD_SHOW_VALUE_PLUS},
-        {"osdvalueminus"     , ACTION_OSD_SHOW_VALUE_MIN},
-        {"smallstepback"     , ACTION_SMALL_STEP_BACK},
-        {"fastforward"       , ACTION_PLAYER_FORWARD},
-        {"rewind"            , ACTION_PLAYER_REWIND},
-        {"play"              , ACTION_PLAYER_PLAY},
-        {"playpause"         , ACTION_PLAYER_PLAYPAUSE},
-        {"switchplayer"      , ACTION_SWITCH_PLAYER},
-        {"delete"            , ACTION_DELETE_ITEM},
-        {"copy"              , ACTION_COPY_ITEM},
-        {"move"              , ACTION_MOVE_ITEM},
-        {"mplayerosd"        , ACTION_SHOW_MPLAYER_OSD},
-        {"hidesubmenu"       , ACTION_OSD_HIDESUBMENU},
-        {"screenshot"        , ACTION_TAKE_SCREENSHOT},
-        {"rename"            , ACTION_RENAME_ITEM},
-        {"togglewatched"     , ACTION_TOGGLE_WATCHED},
-        {"scanitem"          , ACTION_SCAN_ITEM},
-        {"reloadkeymaps"     , ACTION_RELOAD_KEYMAPS},
-        {"volumeup"          , ACTION_VOLUME_UP},
-        {"volumedown"        , ACTION_VOLUME_DOWN},
-        {"mute"              , ACTION_MUTE},
-        {"backspace"         , ACTION_BACKSPACE},
-        {"scrollup"          , ACTION_SCROLL_UP},
-        {"scrolldown"        , ACTION_SCROLL_DOWN},
-        {"analogfastforward" , ACTION_ANALOG_FORWARD},
-        {"analogrewind"      , ACTION_ANALOG_REWIND},
-        {"moveitemup"        , ACTION_MOVE_ITEM_UP},
-        {"moveitemdown"      , ACTION_MOVE_ITEM_DOWN},
-        {"contextmenu"       , ACTION_CONTEXT_MENU},
-        {"shift"             , ACTION_SHIFT},
-        {"symbols"           , ACTION_SYMBOLS},
-        {"cursorleft"        , ACTION_CURSOR_LEFT},
-        {"cursorright"       , ACTION_CURSOR_RIGHT},
-        {"showtime"          , ACTION_SHOW_OSD_TIME},
-        {"analogseekforward" , ACTION_ANALOG_SEEK_FORWARD},
-        {"analogseekback"    , ACTION_ANALOG_SEEK_BACK},
-        {"showpreset"        , ACTION_VIS_PRESET_SHOW},
-        {"presetlist"        , ACTION_VIS_PRESET_LIST},
-        {"nextpreset"        , ACTION_VIS_PRESET_NEXT},
-        {"previouspreset"    , ACTION_VIS_PRESET_PREV},
-        {"lockpreset"        , ACTION_VIS_PRESET_LOCK},
-        {"randompreset"      , ACTION_VIS_PRESET_RANDOM},
-        {"increasevisrating" , ACTION_VIS_RATE_PRESET_PLUS},
-        {"decreasevisrating" , ACTION_VIS_RATE_PRESET_MINUS},
-        {"showvideomenu"     , ACTION_SHOW_VIDEOMENU},
-        {"enter"             , ACTION_ENTER},
-        {"increaserating"    , ACTION_INCREASE_RATING},
-        {"decreaserating"    , ACTION_DECREASE_RATING},
-        {"togglefullscreen"  , ACTION_TOGGLE_FULLSCREEN},
-        {"nextscene"         , ACTION_NEXT_SCENE},
-        {"previousscene"     , ACTION_PREV_SCENE},
-        {"nextletter"        , ACTION_NEXT_LETTER},
-        {"prevletter"        , ACTION_PREV_LETTER},
-        {"jumpsms2"          , ACTION_JUMP_SMS2},
-        {"jumpsms3"          , ACTION_JUMP_SMS3},
-        {"jumpsms4"          , ACTION_JUMP_SMS4},
-        {"jumpsms5"          , ACTION_JUMP_SMS5},
-        {"jumpsms6"          , ACTION_JUMP_SMS6},
-        {"jumpsms7"          , ACTION_JUMP_SMS7},
-        {"jumpsms8"          , ACTION_JUMP_SMS8},
-        {"jumpsms9"          , ACTION_JUMP_SMS9},
-        {"filter"            , ACTION_FILTER},
-        {"filterclear"       , ACTION_FILTER_CLEAR},
-        {"filtersms2"        , ACTION_FILTER_SMS2},
-        {"filtersms3"        , ACTION_FILTER_SMS3},
-        {"filtersms4"        , ACTION_FILTER_SMS4},
-        {"filtersms5"        , ACTION_FILTER_SMS5},
-        {"filtersms6"        , ACTION_FILTER_SMS6},
-        {"filtersms7"        , ACTION_FILTER_SMS7},
-        {"filtersms8"        , ACTION_FILTER_SMS8},
-        {"filtersms9"        , ACTION_FILTER_SMS9},
-        {"firstpage"         , ACTION_FIRST_PAGE},
-        {"lastpage"          , ACTION_LAST_PAGE},
-        {"guiprofile"        , ACTION_GUIPROFILE_BEGIN},
-        {"red"               , ACTION_TELETEXT_RED},
-        {"green"             , ACTION_TELETEXT_GREEN},
-        {"yellow"            , ACTION_TELETEXT_YELLOW},
-        {"blue"              , ACTION_TELETEXT_BLUE},
-        {"increasepar"       , ACTION_INCREASE_PAR},
-        {"decreasepar"       , ACTION_DECREASE_PAR},
-        {"volampup"          , ACTION_VOLAMP_UP},
-        {"volampdown"        , ACTION_VOLAMP_DOWN},
-        {"createbookmark"        , ACTION_CREATE_BOOKMARK},
-        {"createepisodebookmark" , ACTION_CREATE_EPISODE_BOOKMARK},
-        {"settingsreset"      , ACTION_SETTINGS_RESET},
-        {"settingslevelchange", ACTION_SETTINGS_LEVEL_CHANGE},
+    { "left"                     , ACTION_MOVE_LEFT },
+    { "right"                    , ACTION_MOVE_RIGHT },
+    { "up"                       , ACTION_MOVE_UP },
+    { "down"                     , ACTION_MOVE_DOWN },
+    { "pageup"                   , ACTION_PAGE_UP },
+    { "pagedown"                 , ACTION_PAGE_DOWN },
+    { "select"                   , ACTION_SELECT_ITEM },
+    { "highlight"                , ACTION_HIGHLIGHT_ITEM },
+    { "parentdir"                , ACTION_NAV_BACK },                   // backward compatibility
+    { "parentfolder"             , ACTION_PARENT_DIR },
+    { "back"                     , ACTION_NAV_BACK },
+    { "menu"                     , ACTION_MENU},
+    { "previousmenu"             , ACTION_PREVIOUS_MENU },
+    { "info"                     , ACTION_SHOW_INFO },
+    { "pause"                    , ACTION_PAUSE },
+    { "stop"                     , ACTION_STOP },
+    { "skipnext"                 , ACTION_NEXT_ITEM },
+    { "skipprevious"             , ACTION_PREV_ITEM },
+    { "fullscreen"               , ACTION_SHOW_GUI },
+    { "aspectratio"              , ACTION_ASPECT_RATIO },
+    { "stepforward"              , ACTION_STEP_FORWARD },
+    { "stepback"                 , ACTION_STEP_BACK },
+    { "bigstepforward"           , ACTION_BIG_STEP_FORWARD },
+    { "bigstepback"              , ACTION_BIG_STEP_BACK },
+    { "chapterorbigstepforward"  , ACTION_CHAPTER_OR_BIG_STEP_FORWARD },
+    { "chapterorbigstepback"     , ACTION_CHAPTER_OR_BIG_STEP_BACK },
+    { "osd"                      , ACTION_SHOW_OSD },
+    { "showsubtitles"            , ACTION_SHOW_SUBTITLES },
+    { "nextsubtitle"             , ACTION_NEXT_SUBTITLE },
+    { "cyclesubtitle"            , ACTION_CYCLE_SUBTITLE },
+    { "codecinfo"                , ACTION_SHOW_CODEC },
+    { "nextpicture"              , ACTION_NEXT_PICTURE },
+    { "previouspicture"          , ACTION_PREV_PICTURE },
+    { "zoomout"                  , ACTION_ZOOM_OUT },
+    { "zoomin"                   , ACTION_ZOOM_IN },
+    { "playlist"                 , ACTION_SHOW_PLAYLIST },
+    { "queue"                    , ACTION_QUEUE_ITEM },
+    { "zoomnormal"               , ACTION_ZOOM_LEVEL_NORMAL },
+    { "zoomlevel1"               , ACTION_ZOOM_LEVEL_1 },
+    { "zoomlevel2"               , ACTION_ZOOM_LEVEL_2 },
+    { "zoomlevel3"               , ACTION_ZOOM_LEVEL_3 },
+    { "zoomlevel4"               , ACTION_ZOOM_LEVEL_4 },
+    { "zoomlevel5"               , ACTION_ZOOM_LEVEL_5 },
+    { "zoomlevel6"               , ACTION_ZOOM_LEVEL_6 },
+    { "zoomlevel7"               , ACTION_ZOOM_LEVEL_7 },
+    { "zoomlevel8"               , ACTION_ZOOM_LEVEL_8 },
+    { "zoomlevel9"               , ACTION_ZOOM_LEVEL_9 },
+    { "nextcalibration"          , ACTION_CALIBRATE_SWAP_ARROWS },
+    { "resetcalibration"         , ACTION_CALIBRATE_RESET },
+    { "analogmove"               , ACTION_ANALOG_MOVE },
+    { "analogmovex"              , ACTION_ANALOG_MOVE_X },
+    { "analogmovey"              , ACTION_ANALOG_MOVE_Y },
+    { "rotate"                   , ACTION_ROTATE_PICTURE_CW },
+    { "rotateccw"                , ACTION_ROTATE_PICTURE_CCW },
+    { "close"                    , ACTION_NAV_BACK },                    // backwards compatibility
+    { "subtitledelayminus"       , ACTION_SUBTITLE_DELAY_MIN },
+    { "subtitledelay"            , ACTION_SUBTITLE_DELAY },
+    { "subtitledelayplus"        , ACTION_SUBTITLE_DELAY_PLUS },
+    { "audiodelayminus"          , ACTION_AUDIO_DELAY_MIN },
+    { "audiodelay"               , ACTION_AUDIO_DELAY },
+    { "audiodelayplus"           , ACTION_AUDIO_DELAY_PLUS },
+    { "subtitleshiftup"          , ACTION_SUBTITLE_VSHIFT_UP },
+    { "subtitleshiftdown"        , ACTION_SUBTITLE_VSHIFT_DOWN },
+    { "subtitlealign"            , ACTION_SUBTITLE_ALIGN },
+    { "audionextlanguage"        , ACTION_AUDIO_NEXT_LANGUAGE },
+    { "verticalshiftup"          , ACTION_VSHIFT_UP },
+    { "verticalshiftdown"        , ACTION_VSHIFT_DOWN },
+    { "nextresolution"           , ACTION_CHANGE_RESOLUTION },
+    { "audiotoggledigital"       , ACTION_TOGGLE_DIGITAL_ANALOG },
+    { "number0"                  , REMOTE_0 },
+    { "number1"                  , REMOTE_1 },
+    { "number2"                  , REMOTE_2 },
+    { "number3"                  , REMOTE_3 },
+    { "number4"                  , REMOTE_4 },
+    { "number5"                  , REMOTE_5 },
+    { "number6"                  , REMOTE_6 },
+    { "number7"                  , REMOTE_7 },
+    { "number8"                  , REMOTE_8 },
+    { "number9"                  , REMOTE_9 },
+    { "smallstepback"            , ACTION_SMALL_STEP_BACK },
+    { "fastforward"              , ACTION_PLAYER_FORWARD },
+    { "rewind"                   , ACTION_PLAYER_REWIND },
+    { "play"                     , ACTION_PLAYER_PLAY },
+    { "playpause"                , ACTION_PLAYER_PLAYPAUSE },
+    { "switchplayer"             , ACTION_SWITCH_PLAYER },
+    { "delete"                   , ACTION_DELETE_ITEM },
+    { "copy"                     , ACTION_COPY_ITEM },
+    { "move"                     , ACTION_MOVE_ITEM },
+    { "screenshot"               , ACTION_TAKE_SCREENSHOT },
+    { "rename"                   , ACTION_RENAME_ITEM },
+    { "togglewatched"            , ACTION_TOGGLE_WATCHED },
+    { "scanitem"                 , ACTION_SCAN_ITEM },
+    { "reloadkeymaps"            , ACTION_RELOAD_KEYMAPS },
+    { "volumeup"                 , ACTION_VOLUME_UP },
+    { "volumedown"               , ACTION_VOLUME_DOWN },
+    { "mute"                     , ACTION_MUTE },
+    { "backspace"                , ACTION_BACKSPACE },
+    { "scrollup"                 , ACTION_SCROLL_UP },
+    { "scrolldown"               , ACTION_SCROLL_DOWN },
+    { "analogfastforward"        , ACTION_ANALOG_FORWARD },
+    { "analogrewind"             , ACTION_ANALOG_REWIND },
+    { "moveitemup"               , ACTION_MOVE_ITEM_UP },
+    { "moveitemdown"             , ACTION_MOVE_ITEM_DOWN },
+    { "contextmenu"              , ACTION_CONTEXT_MENU },
+    { "shift"                    , ACTION_SHIFT },
+    { "symbols"                  , ACTION_SYMBOLS },
+    { "cursorleft"               , ACTION_CURSOR_LEFT },
+    { "cursorright"              , ACTION_CURSOR_RIGHT },
+    { "showtime"                 , ACTION_SHOW_OSD_TIME },
+    { "analogseekforward"        , ACTION_ANALOG_SEEK_FORWARD },
+    { "analogseekback"           , ACTION_ANALOG_SEEK_BACK },
+    { "showpreset"               , ACTION_VIS_PRESET_SHOW },
+    { "nextpreset"               , ACTION_VIS_PRESET_NEXT },
+    { "previouspreset"           , ACTION_VIS_PRESET_PREV },
+    { "lockpreset"               , ACTION_VIS_PRESET_LOCK },
+    { "randompreset"             , ACTION_VIS_PRESET_RANDOM },
+    { "increasevisrating"        , ACTION_VIS_RATE_PRESET_PLUS },
+    { "decreasevisrating"        , ACTION_VIS_RATE_PRESET_MINUS },
+    { "showvideomenu"            , ACTION_SHOW_VIDEOMENU },
+    { "enter"                    , ACTION_ENTER },
+    { "increaserating"           , ACTION_INCREASE_RATING },
+    { "decreaserating"           , ACTION_DECREASE_RATING },
+    { "togglefullscreen"         , ACTION_TOGGLE_FULLSCREEN },
+    { "nextscene"                , ACTION_NEXT_SCENE },
+    { "previousscene"            , ACTION_PREV_SCENE },
+    { "nextletter"               , ACTION_NEXT_LETTER },
+    { "prevletter"               , ACTION_PREV_LETTER },
+    { "jumpsms2"                 , ACTION_JUMP_SMS2 },
+    { "jumpsms3"                 , ACTION_JUMP_SMS3 },
+    { "jumpsms4"                 , ACTION_JUMP_SMS4 },
+    { "jumpsms5"                 , ACTION_JUMP_SMS5 },
+    { "jumpsms6"                 , ACTION_JUMP_SMS6 },
+    { "jumpsms7"                 , ACTION_JUMP_SMS7 },
+    { "jumpsms8"                 , ACTION_JUMP_SMS8 },
+    { "jumpsms9"                 , ACTION_JUMP_SMS9 },
+    { "filter"                   , ACTION_FILTER },
+    { "filterclear"              , ACTION_FILTER_CLEAR },
+    { "filtersms2"               , ACTION_FILTER_SMS2 },
+    { "filtersms3"               , ACTION_FILTER_SMS3 },
+    { "filtersms4"               , ACTION_FILTER_SMS4 },
+    { "filtersms5"               , ACTION_FILTER_SMS5 },
+    { "filtersms6"               , ACTION_FILTER_SMS6 },
+    { "filtersms7"               , ACTION_FILTER_SMS7 },
+    { "filtersms8"               , ACTION_FILTER_SMS8 },
+    { "filtersms9"               , ACTION_FILTER_SMS9 },
+    { "firstpage"                , ACTION_FIRST_PAGE },
+    { "lastpage"                 , ACTION_LAST_PAGE },
+    { "guiprofile"               , ACTION_GUIPROFILE_BEGIN },
+    { "red"                      , ACTION_TELETEXT_RED },
+    { "green"                    , ACTION_TELETEXT_GREEN },
+    { "yellow"                   , ACTION_TELETEXT_YELLOW },
+    { "blue"                     , ACTION_TELETEXT_BLUE },
+    { "increasepar"              , ACTION_INCREASE_PAR },
+    { "decreasepar"              , ACTION_DECREASE_PAR },
+    { "volampup"                 , ACTION_VOLAMP_UP },
+    { "volampdown"               , ACTION_VOLAMP_DOWN },
+    { "volumeamplification"      , ACTION_VOLAMP },
+    { "createbookmark"           , ACTION_CREATE_BOOKMARK },
+    { "createepisodebookmark"    , ACTION_CREATE_EPISODE_BOOKMARK },
+    { "settingsreset"            , ACTION_SETTINGS_RESET },
+    { "settingslevelchange"      , ACTION_SETTINGS_LEVEL_CHANGE },
 
-        // 3D movie playback/GUI
-        {"stereomode"                , ACTION_STEREOMODE_SELECT}, // cycle 3D modes, for now an alias for next
-        {"nextstereomode"            , ACTION_STEREOMODE_NEXT},
-        {"previousstereomode"        , ACTION_STEREOMODE_PREVIOUS},
-        {"togglestereomode"          , ACTION_STEREOMODE_TOGGLE},
-        {"stereomodetomono"          , ACTION_STEREOMODE_TOMONO},
+    // 3D movie playback/GUI
+    { "stereomode"               , ACTION_STEREOMODE_SELECT },          // cycle 3D modes, for now an alias for next
+    { "nextstereomode"           , ACTION_STEREOMODE_NEXT },
+    { "previousstereomode"       , ACTION_STEREOMODE_PREVIOUS },
+    { "togglestereomode"         , ACTION_STEREOMODE_TOGGLE },
+    { "stereomodetomono"         , ACTION_STEREOMODE_TOMONO },
 
-        // PVR actions
-        {"channelup"             , ACTION_CHANNEL_UP},
-        {"channeldown"           , ACTION_CHANNEL_DOWN},
-        {"previouschannelgroup"  , ACTION_PREVIOUS_CHANNELGROUP},
-        {"nextchannelgroup"      , ACTION_NEXT_CHANNELGROUP},
-        {"playpvr"               , ACTION_PVR_PLAY},
-        {"playpvrtv"             , ACTION_PVR_PLAY_TV},
-        {"playpvrradio"          , ACTION_PVR_PLAY_RADIO},
-        {"record"                , ACTION_RECORD},
+    // PVR actions
+    { "channelup"                , ACTION_CHANNEL_UP },
+    { "channeldown"              , ACTION_CHANNEL_DOWN },
+    { "previouschannelgroup"     , ACTION_PREVIOUS_CHANNELGROUP },
+    { "nextchannelgroup"         , ACTION_NEXT_CHANNELGROUP },
+    { "playpvr"                  , ACTION_PVR_PLAY },
+    { "playpvrtv"                , ACTION_PVR_PLAY_TV },
+    { "playpvrradio"             , ACTION_PVR_PLAY_RADIO },
+    { "record"                   , ACTION_RECORD },
 
-        // Mouse actions
-        {"leftclick"         , ACTION_MOUSE_LEFT_CLICK},
-        {"rightclick"        , ACTION_MOUSE_RIGHT_CLICK},
-        {"middleclick"       , ACTION_MOUSE_MIDDLE_CLICK},
-        {"doubleclick"       , ACTION_MOUSE_DOUBLE_CLICK},
-        {"wheelup"           , ACTION_MOUSE_WHEEL_UP},
-        {"wheeldown"         , ACTION_MOUSE_WHEEL_DOWN},
-        {"mousedrag"         , ACTION_MOUSE_DRAG},
-        {"mousemove"         , ACTION_MOUSE_MOVE},
+    // Mouse actions
+    { "leftclick"                , ACTION_MOUSE_LEFT_CLICK },
+    { "rightclick"               , ACTION_MOUSE_RIGHT_CLICK },
+    { "middleclick"              , ACTION_MOUSE_MIDDLE_CLICK },
+    { "doubleclick"              , ACTION_MOUSE_DOUBLE_CLICK },
+    { "longclick"                , ACTION_MOUSE_LONG_CLICK },
+    { "wheelup"                  , ACTION_MOUSE_WHEEL_UP },
+    { "wheeldown"                , ACTION_MOUSE_WHEEL_DOWN },
+    { "mousedrag"                , ACTION_MOUSE_DRAG },
+    { "mousemove"                , ACTION_MOUSE_MOVE },
 
-        // Touch
-        {"tap"               , ACTION_TOUCH_TAP},
-        {"longpress"         , ACTION_TOUCH_LONGPRESS},
-        {"pangesture"        , ACTION_GESTURE_PAN},
-        {"zoomgesture"       , ACTION_GESTURE_ZOOM},
-        {"rotategesture"     , ACTION_GESTURE_ROTATE},
-        {"swipeleft"         , ACTION_GESTURE_SWIPE_LEFT},
-        {"swiperight"        , ACTION_GESTURE_SWIPE_RIGHT},
-        {"swipeup"           , ACTION_GESTURE_SWIPE_UP},
-        {"swipedown"         , ACTION_GESTURE_SWIPE_DOWN},
+    // Touch
+    { "tap"                      , ACTION_TOUCH_TAP },
+    { "longpress"                , ACTION_TOUCH_LONGPRESS },
+    { "pangesture"               , ACTION_GESTURE_PAN },
+    { "zoomgesture"              , ACTION_GESTURE_ZOOM },
+    { "rotategesture"            , ACTION_GESTURE_ROTATE },
+    { "swipeleft"                , ACTION_GESTURE_SWIPE_LEFT },
+    { "swiperight"               , ACTION_GESTURE_SWIPE_RIGHT },
+    { "swipeup"                  , ACTION_GESTURE_SWIPE_UP },
+    { "swipedown"                , ACTION_GESTURE_SWIPE_DOWN },
 
-        // Do nothing action
-        { "noop"             , ACTION_NOOP}
+    // Do nothing / error action
+    { "error"                    , ACTION_ERROR },
+    { "noop"                     , ACTION_NOOP }
 };
 
 static const ActionMapping windows[] =
-       {{"home"                     , WINDOW_HOME},
-        {"programs"                 , WINDOW_PROGRAMS},
-        {"pictures"                 , WINDOW_PICTURES},
-        {"filemanager"              , WINDOW_FILES},
-        {"files"                    , WINDOW_FILES}, // backward compat
-        {"settings"                 , WINDOW_SETTINGS_MENU},
-        {"music"                    , WINDOW_MUSIC},
-        {"video"                    , WINDOW_VIDEOS},
-        {"videos"                   , WINDOW_VIDEO_NAV},
-        {"tv"                       , WINDOW_PVR}, // backward compat
-        {"pvr"                      , WINDOW_PVR},
-        {"pvrguideinfo"             , WINDOW_DIALOG_PVR_GUIDE_INFO},
-        {"pvrrecordinginfo"         , WINDOW_DIALOG_PVR_RECORDING_INFO},
-        {"pvrtimersetting"          , WINDOW_DIALOG_PVR_TIMER_SETTING},
-        {"pvrgroupmanager"          , WINDOW_DIALOG_PVR_GROUP_MANAGER},
-        {"pvrchannelmanager"        , WINDOW_DIALOG_PVR_CHANNEL_MANAGER},
-        {"pvrguidesearch"           , WINDOW_DIALOG_PVR_GUIDE_SEARCH},
-        {"pvrchannelscan"           , WINDOW_DIALOG_PVR_CHANNEL_SCAN},
-        {"pvrupdateprogress"        , WINDOW_DIALOG_PVR_UPDATE_PROGRESS},
-        {"pvrosdchannels"           , WINDOW_DIALOG_PVR_OSD_CHANNELS},
-        {"pvrosdguide"              , WINDOW_DIALOG_PVR_OSD_GUIDE},
-        {"pvrosddirector"           , WINDOW_DIALOG_PVR_OSD_DIRECTOR},
-        {"pvrosdcutter"             , WINDOW_DIALOG_PVR_OSD_CUTTER},
-        {"pvrosdteletext"           , WINDOW_DIALOG_OSD_TELETEXT},
-        {"systeminfo"               , WINDOW_SYSTEM_INFORMATION},
-        {"testpattern"              , WINDOW_TEST_PATTERN},
-        {"screencalibration"        , WINDOW_SCREEN_CALIBRATION},
-        {"guicalibration"           , WINDOW_SCREEN_CALIBRATION}, // backward compat
-        {"picturessettings"         , WINDOW_SETTINGS_MYPICTURES},
-        {"programssettings"         , WINDOW_SETTINGS_MYPROGRAMS},
-        {"weathersettings"          , WINDOW_SETTINGS_MYWEATHER},
-        {"musicsettings"            , WINDOW_SETTINGS_MYMUSIC},
-        {"systemsettings"           , WINDOW_SETTINGS_SYSTEM},
-        {"videossettings"           , WINDOW_SETTINGS_MYVIDEOS},
-        {"networksettings"          , WINDOW_SETTINGS_SERVICE}, // backward compat
-        {"servicesettings"          , WINDOW_SETTINGS_SERVICE},
-        {"appearancesettings"       , WINDOW_SETTINGS_APPEARANCE},
-        {"pvrsettings"              , WINDOW_SETTINGS_MYPVR},
-        {"tvsettings"               , WINDOW_SETTINGS_MYPVR},  // backward compat
-        {"scripts"                  , WINDOW_PROGRAMS}, // backward compat
-        {"videofiles"               , WINDOW_VIDEO_FILES},
-        {"videolibrary"             , WINDOW_VIDEO_NAV},
-        {"videoplaylist"            , WINDOW_VIDEO_PLAYLIST},
-        {"loginscreen"              , WINDOW_LOGIN_SCREEN},
-        {"profiles"                 , WINDOW_SETTINGS_PROFILES},
-        {"skinsettings"             , WINDOW_SKIN_SETTINGS},
-        {"addonbrowser"             , WINDOW_ADDON_BROWSER},
-        {"yesnodialog"              , WINDOW_DIALOG_YES_NO},
-        {"progressdialog"           , WINDOW_DIALOG_PROGRESS},
-        {"virtualkeyboard"          , WINDOW_DIALOG_KEYBOARD},
-        {"volumebar"                , WINDOW_DIALOG_VOLUME_BAR},
-        {"submenu"                  , WINDOW_DIALOG_SUB_MENU},
-        {"favourites"               , WINDOW_DIALOG_FAVOURITES},
-        {"contextmenu"              , WINDOW_DIALOG_CONTEXT_MENU},
-        {"infodialog"               , WINDOW_DIALOG_KAI_TOAST},
-        {"numericinput"             , WINDOW_DIALOG_NUMERIC},
-        {"gamepadinput"             , WINDOW_DIALOG_GAMEPAD},
-        {"shutdownmenu"             , WINDOW_DIALOG_BUTTON_MENU},
-        {"mutebug"                  , WINDOW_DIALOG_MUTE_BUG},
-        {"playercontrols"           , WINDOW_DIALOG_PLAYER_CONTROLS},
-        {"seekbar"                  , WINDOW_DIALOG_SEEK_BAR},
-        {"musicosd"                 , WINDOW_DIALOG_MUSIC_OSD},
-        {"addonsettings"            , WINDOW_DIALOG_ADDON_SETTINGS},
-        {"visualisationsettings"    , WINDOW_DIALOG_ADDON_SETTINGS}, // backward compat
-        {"visualisationpresetlist"  , WINDOW_DIALOG_VIS_PRESET_LIST},
-        {"osdvideosettings"         , WINDOW_DIALOG_VIDEO_OSD_SETTINGS},
-        {"osdaudiosettings"         , WINDOW_DIALOG_AUDIO_OSD_SETTINGS},
-        {"videobookmarks"           , WINDOW_DIALOG_VIDEO_BOOKMARKS},
-        {"filebrowser"              , WINDOW_DIALOG_FILE_BROWSER},
-        {"networksetup"             , WINDOW_DIALOG_NETWORK_SETUP},
-        {"mediasource"              , WINDOW_DIALOG_MEDIA_SOURCE},
-        {"profilesettings"          , WINDOW_DIALOG_PROFILE_SETTINGS},
-        {"locksettings"             , WINDOW_DIALOG_LOCK_SETTINGS},
-        {"contentsettings"          , WINDOW_DIALOG_CONTENT_SETTINGS},
-        {"songinformation"          , WINDOW_DIALOG_SONG_INFO},
-        {"smartplaylisteditor"      , WINDOW_DIALOG_SMART_PLAYLIST_EDITOR},
-        {"smartplaylistrule"        , WINDOW_DIALOG_SMART_PLAYLIST_RULE},
-        {"busydialog"               , WINDOW_DIALOG_BUSY},
-        {"pictureinfo"              , WINDOW_DIALOG_PICTURE_INFO},
-        {"accesspoints"             , WINDOW_DIALOG_ACCESS_POINTS},
-        {"fullscreeninfo"           , WINDOW_DIALOG_FULLSCREEN_INFO},
-        {"karaokeselector"          , WINDOW_DIALOG_KARAOKE_SONGSELECT},
-        {"karaokelargeselector"     , WINDOW_DIALOG_KARAOKE_SELECTOR},
-        {"sliderdialog"             , WINDOW_DIALOG_SLIDER},
-        {"addoninformation"         , WINDOW_DIALOG_ADDON_INFO},
-        {"subtitlesearch"           , WINDOW_DIALOG_SUBTITLES},
-        {"musicplaylist"            , WINDOW_MUSIC_PLAYLIST},
-        {"musicfiles"               , WINDOW_MUSIC_FILES},
-        {"musiclibrary"             , WINDOW_MUSIC_NAV},
-        {"musicplaylisteditor"      , WINDOW_MUSIC_PLAYLIST_EDITOR},
-        {"teletext"                 , WINDOW_DIALOG_OSD_TELETEXT},
-        {"selectdialog"             , WINDOW_DIALOG_SELECT},
-        {"musicinformation"         , WINDOW_DIALOG_MUSIC_INFO},
-        {"okdialog"                 , WINDOW_DIALOG_OK},
-        {"movieinformation"         , WINDOW_DIALOG_VIDEO_INFO},
-        {"textviewer"               , WINDOW_DIALOG_TEXT_VIEWER},
-        {"fullscreenvideo"          , WINDOW_FULLSCREEN_VIDEO},
-        {"fullscreenlivetv"         , WINDOW_FULLSCREEN_LIVETV}, // virtual window/keymap section for PVR specific bindings in fullscreen playback (which internally uses WINDOW_FULLSCREEN_VIDEO)
-        {"visualisation"            , WINDOW_VISUALISATION},
-        {"slideshow"                , WINDOW_SLIDESHOW},
-        {"filestackingdialog"       , WINDOW_DIALOG_FILESTACKING},
-        {"karaoke"                  , WINDOW_KARAOKELYRICS},
-        {"weather"                  , WINDOW_WEATHER},
-        {"screensaver"              , WINDOW_SCREENSAVER},
-        {"videoosd"                 , WINDOW_DIALOG_VIDEO_OSD},
-        {"videomenu"                , WINDOW_VIDEO_MENU},
-        {"videotimeseek"            , WINDOW_VIDEO_TIME_SEEK},
-        {"musicoverlay"             , WINDOW_DIALOG_MUSIC_OVERLAY},
-        {"videooverlay"             , WINDOW_DIALOG_VIDEO_OVERLAY},
-        {"startwindow"              , WINDOW_START},
-        {"startup"                  , WINDOW_STARTUP_ANIM},
-        {"peripherals"              , WINDOW_DIALOG_PERIPHERAL_MANAGER},
-        {"peripheralsettings"       , WINDOW_DIALOG_PERIPHERAL_SETTINGS},
-        {"extendedprogressdialog"   , WINDOW_DIALOG_EXT_PROGRESS},
-        {"mediafilter"              , WINDOW_DIALOG_MEDIA_FILTER},
-        {"addon"                    , WINDOW_ADDON_START}};
-
-static const ActionMapping mousecommands[] =
 {
-  { "leftclick",   ACTION_MOUSE_LEFT_CLICK },
-  { "rightclick",  ACTION_MOUSE_RIGHT_CLICK },
-  { "middleclick", ACTION_MOUSE_MIDDLE_CLICK },
-  { "doubleclick", ACTION_MOUSE_DOUBLE_CLICK },
-  { "wheelup",     ACTION_MOUSE_WHEEL_UP },
-  { "wheeldown",   ACTION_MOUSE_WHEEL_DOWN },
-  { "mousedrag",   ACTION_MOUSE_DRAG },
-  { "mousemove",   ACTION_MOUSE_MOVE }
+    { "home"                     , WINDOW_HOME },
+    { "programs"                 , WINDOW_PROGRAMS },
+    { "pictures"                 , WINDOW_PICTURES },
+    { "filemanager"              , WINDOW_FILES },
+    { "files"                    , WINDOW_FILES },                      // backward compat
+    { "settings"                 , WINDOW_SETTINGS_MENU },
+    { "music"                    , WINDOW_MUSIC },
+    { "video"                    , WINDOW_VIDEOS },
+    { "videos"                   , WINDOW_VIDEO_NAV },
+    { "pvr"                      , WINDOW_TV_CHANNELS },                // backward compat
+    { "tvchannels"               , WINDOW_TV_CHANNELS },
+    { "tvrecordings"             , WINDOW_TV_RECORDINGS },
+    { "tvguide"                  , WINDOW_TV_GUIDE },
+    { "tvtimers"                 , WINDOW_TV_TIMERS },
+    { "tvsearch"                 , WINDOW_TV_SEARCH },
+    { "radiochannels"            , WINDOW_RADIO_CHANNELS },
+    { "radiorecordings"          , WINDOW_RADIO_RECORDINGS },
+    { "radioguide"               , WINDOW_RADIO_GUIDE },
+    { "radiotimers"              , WINDOW_RADIO_TIMERS },
+    { "radiosearch"              , WINDOW_RADIO_SEARCH },
+    { "pvrguideinfo"             , WINDOW_DIALOG_PVR_GUIDE_INFO },
+    { "pvrrecordinginfo"         , WINDOW_DIALOG_PVR_RECORDING_INFO },
+    { "pvrradiordsinfo"          , WINDOW_DIALOG_PVR_RADIO_RDS_INFO },
+    { "pvrtimersetting"          , WINDOW_DIALOG_PVR_TIMER_SETTING },
+    { "pvrgroupmanager"          , WINDOW_DIALOG_PVR_GROUP_MANAGER },
+    { "pvrchannelmanager"        , WINDOW_DIALOG_PVR_CHANNEL_MANAGER },
+    { "pvrguidesearch"           , WINDOW_DIALOG_PVR_GUIDE_SEARCH },
+    { "pvrchannelscan"           , WINDOW_DIALOG_PVR_CHANNEL_SCAN },
+    { "pvrupdateprogress"        , WINDOW_DIALOG_PVR_UPDATE_PROGRESS },
+    { "pvrosdchannels"           , WINDOW_DIALOG_PVR_OSD_CHANNELS },
+    { "pvrosdguide"              , WINDOW_DIALOG_PVR_OSD_GUIDE },
+    { "pvrosdteletext"           , WINDOW_DIALOG_OSD_TELETEXT },
+    { "systeminfo"               , WINDOW_SYSTEM_INFORMATION },
+    { "testpattern"              , WINDOW_TEST_PATTERN },
+    { "screencalibration"        , WINDOW_SCREEN_CALIBRATION },
+    { "guicalibration"           , WINDOW_SCREEN_CALIBRATION },        // backward compat
+    { "picturessettings"         , WINDOW_SETTINGS_MYPICTURES },
+    { "programssettings"         , WINDOW_SETTINGS_MYPROGRAMS },
+    { "weathersettings"          , WINDOW_SETTINGS_MYWEATHER },
+    { "musicsettings"            , WINDOW_SETTINGS_MYMUSIC },
+    { "systemsettings"           , WINDOW_SETTINGS_SYSTEM },
+    { "videossettings"           , WINDOW_SETTINGS_MYVIDEOS },
+    { "networksettings"          , WINDOW_SETTINGS_SERVICE },          // backward compat
+    { "servicesettings"          , WINDOW_SETTINGS_SERVICE },
+    { "appearancesettings"       , WINDOW_SETTINGS_APPEARANCE },
+    { "pvrsettings"              , WINDOW_SETTINGS_MYPVR },
+    { "tvsettings"               , WINDOW_SETTINGS_MYPVR },            // backward compat
+    { "scripts"                  , WINDOW_PROGRAMS },                  // backward compat
+    { "videofiles"               , WINDOW_VIDEO_FILES },
+    { "videolibrary"             , WINDOW_VIDEO_NAV },
+    { "videoplaylist"            , WINDOW_VIDEO_PLAYLIST },
+    { "loginscreen"              , WINDOW_LOGIN_SCREEN },
+    { "profiles"                 , WINDOW_SETTINGS_PROFILES },
+    { "skinsettings"             , WINDOW_SKIN_SETTINGS },
+    { "addonbrowser"             , WINDOW_ADDON_BROWSER },
+    { "yesnodialog"              , WINDOW_DIALOG_YES_NO },
+    { "progressdialog"           , WINDOW_DIALOG_PROGRESS },
+    { "virtualkeyboard"          , WINDOW_DIALOG_KEYBOARD },
+    { "volumebar"                , WINDOW_DIALOG_VOLUME_BAR },
+    { "submenu"                  , WINDOW_DIALOG_SUB_MENU },
+    { "favourites"               , WINDOW_DIALOG_FAVOURITES },
+    { "contextmenu"              , WINDOW_DIALOG_CONTEXT_MENU },
+    { "infodialog"               , WINDOW_DIALOG_KAI_TOAST },
+    { "numericinput"             , WINDOW_DIALOG_NUMERIC },
+    { "gamepadinput"             , WINDOW_DIALOG_GAMEPAD },
+    { "shutdownmenu"             , WINDOW_DIALOG_BUTTON_MENU },
+    { "mutebug"                  , WINDOW_DIALOG_MUTE_BUG },
+    { "playercontrols"           , WINDOW_DIALOG_PLAYER_CONTROLS },
+    { "seekbar"                  , WINDOW_DIALOG_SEEK_BAR },
+    { "musicosd"                 , WINDOW_DIALOG_MUSIC_OSD },
+    { "addonsettings"            , WINDOW_DIALOG_ADDON_SETTINGS },
+    { "visualisationsettings"    , WINDOW_DIALOG_ADDON_SETTINGS },     // backward compat
+    { "visualisationpresetlist"  , WINDOW_DIALOG_VIS_PRESET_LIST },
+    { "osdvideosettings"         , WINDOW_DIALOG_VIDEO_OSD_SETTINGS },
+    { "osdaudiosettings"         , WINDOW_DIALOG_AUDIO_OSD_SETTINGS },
+    { "audiodspmanager"          , WINDOW_DIALOG_AUDIO_DSP_MANAGER },
+    { "osdaudiodspsettings"      , WINDOW_DIALOG_AUDIO_DSP_OSD_SETTINGS },
+    { "videobookmarks"           , WINDOW_DIALOG_VIDEO_BOOKMARKS },
+    { "filebrowser"              , WINDOW_DIALOG_FILE_BROWSER },
+    { "networksetup"             , WINDOW_DIALOG_NETWORK_SETUP },
+    { "mediasource"              , WINDOW_DIALOG_MEDIA_SOURCE },
+    { "profilesettings"          , WINDOW_DIALOG_PROFILE_SETTINGS },
+    { "locksettings"             , WINDOW_DIALOG_LOCK_SETTINGS },
+    { "contentsettings"          , WINDOW_DIALOG_CONTENT_SETTINGS },
+    { "songinformation"          , WINDOW_DIALOG_SONG_INFO },
+    { "smartplaylisteditor"      , WINDOW_DIALOG_SMART_PLAYLIST_EDITOR },
+    { "smartplaylistrule"        , WINDOW_DIALOG_SMART_PLAYLIST_RULE },
+    { "busydialog"               , WINDOW_DIALOG_BUSY },
+    { "pictureinfo"              , WINDOW_DIALOG_PICTURE_INFO },
+    { "accesspoints"             , WINDOW_DIALOG_ACCESS_POINTS },
+    { "fullscreeninfo"           , WINDOW_DIALOG_FULLSCREEN_INFO },
+    { "sliderdialog"             , WINDOW_DIALOG_SLIDER },
+    { "addoninformation"         , WINDOW_DIALOG_ADDON_INFO },
+    { "subtitlesearch"           , WINDOW_DIALOG_SUBTITLES },
+    { "musicplaylist"            , WINDOW_MUSIC_PLAYLIST },
+    { "musicfiles"               , WINDOW_MUSIC_FILES },
+    { "musiclibrary"             , WINDOW_MUSIC_NAV },
+    { "musicplaylisteditor"      , WINDOW_MUSIC_PLAYLIST_EDITOR },
+    { "teletext"                 , WINDOW_DIALOG_OSD_TELETEXT },
+    { "selectdialog"             , WINDOW_DIALOG_SELECT },
+    { "musicinformation"         , WINDOW_DIALOG_MUSIC_INFO },
+    { "okdialog"                 , WINDOW_DIALOG_OK },
+    { "movieinformation"         , WINDOW_DIALOG_VIDEO_INFO },
+    { "textviewer"               , WINDOW_DIALOG_TEXT_VIEWER },
+    { "fullscreenvideo"          , WINDOW_FULLSCREEN_VIDEO },
+    { "fullscreenlivetv"         , WINDOW_FULLSCREEN_LIVETV },         // virtual window/keymap section for PVR specific bindings in fullscreen playback (which internally uses WINDOW_FULLSCREEN_VIDEO)
+    { "fullscreenradio"          , WINDOW_FULLSCREEN_RADIO },          // virtual window for fullscreen radio, uses WINDOW_VISUALISATION as fallback
+    { "visualisation"            , WINDOW_VISUALISATION },
+    { "slideshow"                , WINDOW_SLIDESHOW },
+    { "weather"                  , WINDOW_WEATHER },
+    { "screensaver"              , WINDOW_SCREENSAVER },
+    { "videoosd"                 , WINDOW_DIALOG_VIDEO_OSD },
+    { "videomenu"                , WINDOW_VIDEO_MENU },
+    { "videotimeseek"            , WINDOW_VIDEO_TIME_SEEK },
+    { "startwindow"              , WINDOW_START },
+    { "startup"                  , WINDOW_STARTUP_ANIM },
+    { "peripheralsettings"       , WINDOW_DIALOG_PERIPHERAL_SETTINGS },
+    { "extendedprogressdialog"   , WINDOW_DIALOG_EXT_PROGRESS },
+    { "mediafilter"              , WINDOW_DIALOG_MEDIA_FILTER },
+    { "addon"                    , WINDOW_ADDON_START },
+    { "eventlog"                 , WINDOW_EVENT_LOG}
+};
+
+static const ActionMapping mousekeys[] =
+{
+    { "click"                    , KEY_MOUSE_CLICK },
+    { "leftclick"                , KEY_MOUSE_CLICK },
+    { "rightclick"               , KEY_MOUSE_RIGHTCLICK },
+    { "middleclick"              , KEY_MOUSE_MIDDLECLICK },
+    { "doubleclick"              , KEY_MOUSE_DOUBLE_CLICK },
+    { "longclick"                , KEY_MOUSE_LONG_CLICK },
+    { "wheelup"                  , KEY_MOUSE_WHEEL_UP },
+    { "wheeldown"                , KEY_MOUSE_WHEEL_DOWN },
+    { "mousemove"                , KEY_MOUSE_MOVE },
+    { "mousedrag"                , KEY_MOUSE_DRAG },
+    { "mousedragstart"           , KEY_MOUSE_DRAG_START },
+    { "mousedragend"             , KEY_MOUSE_DRAG_END },
+    { "mouserdrag"               , KEY_MOUSE_RDRAG },
+    { "mouserdragstart"          , KEY_MOUSE_RDRAG_START },
+    { "mouserdragend"            , KEY_MOUSE_RDRAG_END }
 };
 
 static const ActionMapping touchcommands[] =
 {
-  { "tap",                ACTION_TOUCH_TAP },
-  { "longpress",          ACTION_TOUCH_LONGPRESS },
-  { "pan",                ACTION_GESTURE_PAN },
-  { "zoom",               ACTION_GESTURE_ZOOM },
-  { "rotate",             ACTION_GESTURE_ROTATE },
-  { "swipeleft",          ACTION_GESTURE_SWIPE_LEFT },
-  { "swiperight",         ACTION_GESTURE_SWIPE_RIGHT },
-  { "swipeup",            ACTION_GESTURE_SWIPE_UP },
-  { "swipedown",          ACTION_GESTURE_SWIPE_DOWN }
+    { "tap"                      , ACTION_TOUCH_TAP },
+    { "longpress"                , ACTION_TOUCH_LONGPRESS },
+    { "pan"                      , ACTION_GESTURE_PAN },
+    { "zoom"                     , ACTION_GESTURE_ZOOM },
+    { "rotate"                   , ACTION_GESTURE_ROTATE },
+    { "swipeleft"                , ACTION_GESTURE_SWIPE_LEFT },
+    { "swiperight"               , ACTION_GESTURE_SWIPE_RIGHT },
+    { "swipeup"                  , ACTION_GESTURE_SWIPE_UP },
+    { "swipedown"                , ACTION_GESTURE_SWIPE_DOWN }
 };
 
 static const WindowMapping fallbackWindows[] =
 {
-  { WINDOW_FULLSCREEN_LIVETV,          WINDOW_FULLSCREEN_VIDEO },
-  { WINDOW_DIALOG_FULLSCREEN_INFO,     WINDOW_FULLSCREEN_VIDEO }
+    { WINDOW_FULLSCREEN_LIVETV   , WINDOW_FULLSCREEN_VIDEO },
+    { WINDOW_FULLSCREEN_RADIO    , WINDOW_VISUALISATION }
 };
 
 #ifdef TARGET_WINDOWS
 static const ActionMapping appcommands[] =
 {
-  { "browser_back",        APPCOMMAND_BROWSER_BACKWARD },
-  { "browser_forward",     APPCOMMAND_BROWSER_FORWARD },
-  { "browser_refresh",     APPCOMMAND_BROWSER_REFRESH },
-  { "browser_stop",        APPCOMMAND_BROWSER_STOP },
-  { "browser_search",      APPCOMMAND_BROWSER_SEARCH },
-  { "browser_favorites",   APPCOMMAND_BROWSER_FAVORITES },
-  { "browser_home",        APPCOMMAND_BROWSER_HOME },
-  { "volume_mute",         APPCOMMAND_VOLUME_MUTE },
-  { "volume_down",         APPCOMMAND_VOLUME_DOWN },
-  { "volume_up",           APPCOMMAND_VOLUME_UP },
-  { "next_track",          APPCOMMAND_MEDIA_NEXTTRACK },
-  { "prev_track",          APPCOMMAND_MEDIA_PREVIOUSTRACK },
-  { "stop",                APPCOMMAND_MEDIA_STOP },
-  { "play_pause",          APPCOMMAND_MEDIA_PLAY_PAUSE },
-  { "launch_mail",         APPCOMMAND_LAUNCH_MAIL },
-  { "launch_media_select", APPCOMMAND_LAUNCH_MEDIA_SELECT },
-  { "launch_app1",         APPCOMMAND_LAUNCH_APP1 },
-  { "launch_app2",         APPCOMMAND_LAUNCH_APP2 },
-  { "play",                APPCOMMAND_MEDIA_PLAY },
-  { "pause",               APPCOMMAND_MEDIA_PAUSE },
-  { "fastforward",         APPCOMMAND_MEDIA_FAST_FORWARD },
-  { "rewind",              APPCOMMAND_MEDIA_REWIND },
-  { "channelup",           APPCOMMAND_MEDIA_CHANNEL_UP },
-  { "channeldown",         APPCOMMAND_MEDIA_CHANNEL_DOWN }
+    { "browser_back"             , APPCOMMAND_BROWSER_BACKWARD },
+    { "browser_forward"          , APPCOMMAND_BROWSER_FORWARD },
+    { "browser_refresh"          , APPCOMMAND_BROWSER_REFRESH },
+    { "browser_stop"             , APPCOMMAND_BROWSER_STOP },
+    { "browser_search"           , APPCOMMAND_BROWSER_SEARCH },
+    { "browser_favorites"        , APPCOMMAND_BROWSER_FAVORITES },
+    { "browser_home"             , APPCOMMAND_BROWSER_HOME },
+    { "volume_mute"              , APPCOMMAND_VOLUME_MUTE },
+    { "volume_down"              , APPCOMMAND_VOLUME_DOWN },
+    { "volume_up"                , APPCOMMAND_VOLUME_UP },
+    { "next_track"               , APPCOMMAND_MEDIA_NEXTTRACK },
+    { "prev_track"               , APPCOMMAND_MEDIA_PREVIOUSTRACK },
+    { "stop"                     , APPCOMMAND_MEDIA_STOP },
+    { "play_pause"               , APPCOMMAND_MEDIA_PLAY_PAUSE },
+    { "launch_mail"              , APPCOMMAND_LAUNCH_MAIL },
+    { "launch_media_select"      , APPCOMMAND_LAUNCH_MEDIA_SELECT },
+    { "launch_app1"              , APPCOMMAND_LAUNCH_APP1 },
+    { "launch_app2"              , APPCOMMAND_LAUNCH_APP2 },
+    { "play"                     , APPCOMMAND_MEDIA_PLAY },
+    { "pause"                    , APPCOMMAND_MEDIA_PAUSE },
+    { "fastforward"              , APPCOMMAND_MEDIA_FAST_FORWARD },
+    { "rewind"                   , APPCOMMAND_MEDIA_REWIND },
+    { "channelup"                , APPCOMMAND_MEDIA_CHANNEL_UP },
+    { "channeldown"              , APPCOMMAND_MEDIA_CHANNEL_DOWN }
 };
 #endif
 
@@ -463,13 +479,13 @@ CButtonTranslator::CButtonTranslator()
 #if defined(HAS_LIRC) || defined(HAS_IRSERVERSUITE)
 void CButtonTranslator::ClearLircButtonMapEntries()
 {
-  vector<lircButtonMap*> maps;
-  for (map<CStdString,lircButtonMap*>::iterator it  = lircRemotesMap.begin();
-                                                it != lircRemotesMap.end();++it)
+  std::vector<lircButtonMap*> maps;
+  for (std::map<std::string,lircButtonMap*>::iterator it  = lircRemotesMap.begin();
+                                                 it != lircRemotesMap.end();++it)
     maps.push_back(it->second);
   sort(maps.begin(),maps.end());
-  vector<lircButtonMap*>::iterator itend = unique(maps.begin(),maps.end());
-  for (vector<lircButtonMap*>::iterator it = maps.begin(); it != itend;++it)
+  std::vector<lircButtonMap*>::iterator itend = unique(maps.begin(),maps.end());
+  for (std::vector<lircButtonMap*>::iterator it = maps.begin(); it != itend;++it)
     delete *it;
 }
 #endif
@@ -482,11 +498,11 @@ CButtonTranslator::~CButtonTranslator()
 }
 
 // Add the supplied device name to the list of connected devices
-void CButtonTranslator::AddDevice(CStdString& strDevice)
+void CButtonTranslator::AddDevice(std::string& strDevice)
 {
   // Only add the device if it isn't already in the list
-  std::list<CStdString>::iterator it;
-  for (it = m_deviceList.begin(); it != m_deviceList.end(); it++)
+  std::list<std::string>::iterator it;
+  for (it = m_deviceList.begin(); it != m_deviceList.end(); ++it)
     if (*it == strDevice)
       return;
 
@@ -498,11 +514,11 @@ void CButtonTranslator::AddDevice(CStdString& strDevice)
   Load();
 }
 
-void CButtonTranslator::RemoveDevice(CStdString& strDevice)
+void CButtonTranslator::RemoveDevice(std::string& strDevice)
 {
   // Find the device
-  std::list<CStdString>::iterator it;
-  for (it = m_deviceList.begin(); it != m_deviceList.end(); it++)
+  std::list<std::string>::iterator it;
+  for (it = m_deviceList.begin(); it != m_deviceList.end(); ++it)
     if (*it == strDevice)
       break;
   if (it == m_deviceList.end())
@@ -528,7 +544,7 @@ bool CButtonTranslator::Load(bool AlwaysLoad)
   };
   bool success = false;
 
-  for (unsigned int dirIndex = 0; dirIndex < sizeof(DIRS_TO_CHECK)/sizeof(DIRS_TO_CHECK[0]); ++dirIndex)
+  for (unsigned int dirIndex = 0; dirIndex < ARRAY_SIZE(DIRS_TO_CHECK); ++dirIndex)
   {
     if (XFILE::CDirectory::Exists(DIRS_TO_CHECK[dirIndex]))
     {
@@ -543,10 +559,10 @@ bool CButtonTranslator::Load(bool AlwaysLoad)
       }
 
       // Load mappings for any HID devices we have connected
-      std::list<CStdString>::iterator it;
-      for (it = m_deviceList.begin(); it != m_deviceList.end(); it++)
+      std::list<std::string>::iterator it;
+      for (it = m_deviceList.begin(); it != m_deviceList.end(); ++it)
       {
-        CStdString devicedir = DIRS_TO_CHECK[dirIndex];
+        std::string devicedir = DIRS_TO_CHECK[dirIndex];
         devicedir.append(*it);
         devicedir.append("/");
         if( XFILE::CDirectory::Exists(devicedir) )
@@ -577,14 +593,14 @@ bool CButtonTranslator::Load(bool AlwaysLoad)
 #else
 #define REMOTEMAP "IRSSmap.xml"
 #endif
-  CStdString lircmapPath = URIUtils::AddFileToFolder("special://xbmc/system/", REMOTEMAP);
+  std::string lircmapPath = URIUtils::AddFileToFolder("special://xbmc/system/", REMOTEMAP);
   lircRemotesMap.clear();
   if(CFile::Exists(lircmapPath))
     success |= LoadLircMap(lircmapPath);
   else
     CLog::Log(LOGDEBUG, "CButtonTranslator::Load - no system %s found, skipping", REMOTEMAP);
 
-  lircmapPath = CProfilesManager::Get().GetUserDataItem(REMOTEMAP);
+  lircmapPath = CProfilesManager::GetInstance().GetUserDataItem(REMOTEMAP);
   if(CFile::Exists(lircmapPath))
     success |= LoadLircMap(lircmapPath);
   else
@@ -600,7 +616,7 @@ bool CButtonTranslator::Load(bool AlwaysLoad)
   return true;
 }
 
-bool CButtonTranslator::LoadKeymap(const CStdString &keymapPath)
+bool CButtonTranslator::LoadKeymap(const std::string &keymapPath)
 {
   CXBMCTinyXML xmlDoc;
 
@@ -616,7 +632,7 @@ bool CButtonTranslator::LoadKeymap(const CStdString &keymapPath)
     CLog::Log(LOGERROR, "Error getting keymap root: %s", keymapPath.c_str());
     return false;
   }
-  CStdString strValue = pRoot->Value();
+  std::string strValue = pRoot->Value();
   if ( strValue != "keymap")
   {
     CLog::Log(LOGERROR, "%s Doesn't contain <keymap>", keymapPath.c_str());
@@ -632,7 +648,9 @@ bool CButtonTranslator::LoadKeymap(const CStdString &keymapPath)
       const char *szWindow = pWindow->Value();
       if (szWindow)
       {
-        if (strcmpi(szWindow, "global") == 0)
+        if (strcmpi(szWindow, "joystickFamily") == 0)
+          MapJoystickFamily(pWindow);
+        else if (strcmpi(szWindow, "global") == 0)
           windowID = -1;
         else
           windowID = TranslateWindow(szWindow);
@@ -645,8 +663,7 @@ bool CButtonTranslator::LoadKeymap(const CStdString &keymapPath)
   return true;
 }
 
-#if defined(HAS_LIRC) || defined(HAS_IRSERVERSUITE)
-bool CButtonTranslator::LoadLircMap(const CStdString &lircmapPath)
+bool CButtonTranslator::LoadLircMap(const std::string &lircmapPath)
 {
 #ifdef TARGET_POSIX
 #define REMOTEMAPTAG "lircmap"
@@ -665,7 +682,7 @@ bool CButtonTranslator::LoadLircMap(const CStdString &lircmapPath)
   }
 
   TiXmlElement* pRoot = xmlDoc.RootElement();
-  CStdString strValue = pRoot->Value();
+  std::string strValue = pRoot->Value();
   if (strValue != REMOTEMAPTAG)
   {
     CLog::Log(LOGERROR, "%sl Doesn't contain <%s>", lircmapPath.c_str(), REMOTEMAPTAG);
@@ -682,8 +699,8 @@ bool CButtonTranslator::LoadLircMap(const CStdString &lircmapPath)
       if (szRemote)
       {
         TiXmlAttribute* pAttr = pRemote->ToElement()->FirstAttribute();
-        const char* szDeviceName = pAttr->Value();
-        MapRemote(pRemote, szDeviceName);
+        if (pAttr)
+          MapRemote(pRemote, pAttr->Value());
       }
     }
     pRemote = pRemote->NextSibling();
@@ -695,8 +712,8 @@ bool CButtonTranslator::LoadLircMap(const CStdString &lircmapPath)
 void CButtonTranslator::MapRemote(TiXmlNode *pRemote, const char* szDevice)
 {
   CLog::Log(LOGINFO, "* Adding remote mapping for device '%s'", szDevice);
-  vector<string> RemoteNames;
-  map<CStdString, lircButtonMap*>::iterator it = lircRemotesMap.find(szDevice);
+  std::vector<std::string> RemoteNames;
+  std::map<std::string, lircButtonMap*>::iterator it = lircRemotesMap.find(szDevice);
   if (it == lircRemotesMap.end())
     lircRemotesMap[szDevice] = new lircButtonMap;
   lircButtonMap& buttons = *lircRemotesMap[szDevice];
@@ -704,17 +721,16 @@ void CButtonTranslator::MapRemote(TiXmlNode *pRemote, const char* szDevice)
   TiXmlElement *pButton = pRemote->FirstChildElement();
   while (pButton)
   {
-    if (strcmpi(pButton->Value(), "altname")==0)
-      RemoteNames.push_back(string(pButton->GetText()));
-    else
+    if (!pButton->NoChildren())
     {
-      if (pButton->FirstChild() && pButton->FirstChild()->Value())
-        buttons[pButton->FirstChild()->Value()] = pButton->Value();
+      if (pButton->ValueStr() == "altname")
+        RemoteNames.push_back(pButton->FirstChild()->ValueStr());
+      else
+        buttons[pButton->FirstChild()->ValueStr()] = pButton->ValueStr();
     }
-
     pButton = pButton->NextSiblingElement();
   }
-  for (vector<string>::iterator it  = RemoteNames.begin();
+  for (std::vector<std::string>::iterator it  = RemoteNames.begin();
                                 it != RemoteNames.end();++it)
   {
     CLog::Log(LOGINFO, "* Linking remote mapping for '%s' to '%s'", szDevice, it->c_str());
@@ -725,7 +741,7 @@ void CButtonTranslator::MapRemote(TiXmlNode *pRemote, const char* szDevice)
 int CButtonTranslator::TranslateLircRemoteString(const char* szDevice, const char *szButton)
 {
   // Find the device
-  map<CStdString, lircButtonMap*>::iterator it = lircRemotesMap.find(szDevice);
+  std::map<std::string, lircButtonMap*>::iterator it = lircRemotesMap.find(szDevice);
   if (it == lircRemotesMap.end())
     return 0;
 
@@ -740,117 +756,259 @@ int CButtonTranslator::TranslateLircRemoteString(const char* szDevice, const cha
 
   return TranslateRemoteString((*it2).second.c_str());
 }
-#endif
 
 #if defined(HAS_SDL_JOYSTICK) || defined(HAS_EVENT_SERVER)
+void CButtonTranslator::MapJoystickFamily(TiXmlNode *pNode)
+{
+  TiXmlElement *pFamily = pNode->ToElement();
+  if (pFamily && pFamily->Attribute("name"))
+  {
+    std::string joyFamilyName = pFamily->Attribute("name");
+    JoystickFamily* joyFamily = &m_joystickFamilies[joyFamilyName];
+
+    TiXmlElement *pMember = pFamily->FirstChildElement();
+    while (pMember)
+    {
+      TiXmlNode* pName = pMember->FirstChild();
+      if (pName && pName->ValueStr() != "") {
+        std::shared_ptr<CRegExp> re(new CRegExp(true, CRegExp::asciiOnly));
+        std::string joyRe = JoynameToRegex(pName->ValueStr());
+        if (!re->RegComp(joyRe, CRegExp::StudyRegExp))
+        {
+          CLog::Log(LOGNOTICE, "Invalid joystick regex specified: '%s'", pName->Value());
+          continue;
+        }
+        AddFamilyRegex(joyFamily, re);
+      }
+      pMember = pMember->NextSiblingElement();
+    }
+  }
+  else
+  {
+    CLog::Log(LOGNOTICE, "Ignoring nameless joystick family");
+  }
+}
+
 void CButtonTranslator::MapJoystickActions(int windowID, TiXmlNode *pJoystick)
 {
-  string joyname = JOYSTICK_DEFAULT_MAP; // default global map name
-  vector<string> joynames;
-  map<int, string> buttonMap;
-  map<int, string> axisMap;
-  map<int, string> hatMap;
+  std::string joyFamilyName;
+  std::map<int, std::string> buttonMap;
+  std::map<int, std::string> axisMap;
+  AxesConfig axesConfig;
+  ActionMap hatMap;
 
   TiXmlElement *pJoy = pJoystick->ToElement();
-  if (pJoy && pJoy->Attribute("name"))
-    joyname = pJoy->Attribute("name");
-  else
-    CLog::Log(LOGNOTICE, "No Joystick name specified, loading default map");
+  if (pJoy && pJoy->Attribute("family"))
+    joyFamilyName = pJoy->Attribute("family");
+  else if (pJoy) {
+    // transform loose name to new family, including altnames
+    std::string joyName = JOYSTICK_DEFAULT_MAP; // default global map name
+    if (pJoy->Attribute("name"))
+      joyName = pJoy->Attribute("name");
+    joyFamilyName = joyName;    
+    JoystickFamily* joyFamily = &m_joystickFamilies[joyFamilyName];
 
-  joynames.push_back(joyname);
+    std::shared_ptr<CRegExp> re(new CRegExp(true, CRegExp::asciiOnly));
+    std::string joyRe = JoynameToRegex(joyName);
+    if (!re->RegComp(joyRe, CRegExp::StudyRegExp))
+    {
+      CLog::Log(LOGNOTICE, "Invalid joystick regex specified: '%s'", joyName.c_str());
+      return;
+    }
+    AddFamilyRegex(joyFamily, re);
+
+    // add altnames to family
+    TiXmlElement *pNode = pJoystick->FirstChildElement();
+    while (pNode) {
+      const std::string &type = pNode->ValueStr();
+      if (type == "altname") {
+        std::string altName = pNode->FirstChild()->ValueStr();
+        std::shared_ptr<CRegExp> altRe(new CRegExp(true, CRegExp::asciiOnly));
+        std::string altReStr = JoynameToRegex(altName);
+        if (!altRe->RegComp(altReStr, CRegExp::StudyRegExp))
+          CLog::Log(LOGNOTICE, "Ignoring invalid joystick altname regex: '%s'", altReStr.c_str());
+        else
+          AddFamilyRegex(joyFamily, altRe);
+      }
+      pNode = pNode->NextSiblingElement();
+    }
+
+  }
 
   // parse map
   TiXmlElement *pButton = pJoystick->FirstChildElement();
   int id = 0;
-  //char* szId;
-  const char* szType;
-  const char *szAction;
   while (pButton)
   {
-    szType = pButton->Value();
-    szAction = pButton->GetText();
-    if (szAction == NULL)
-      szAction = "";
-    if (szType)
+    const std::string &type = pButton->ValueStr();
+    std::string action;
+    if (!pButton->NoChildren())
+      action = pButton->FirstChild()->ValueStr();
+
+    // skip altname tags here because those contain no mappings ...
+    if (type == "altname")
     {
-      if ((pButton->QueryIntAttribute("id", &id) == TIXML_SUCCESS) && id>=0 && id<=256)
+      pButton = pButton->NextSiblingElement();
+      continue;
+    }
+
+    if ((pButton->QueryIntAttribute("id", &id) == TIXML_SUCCESS) && id>=0 && id<=256)
+    {
+      if (type == "button")
       {
-        if (strcmpi(szType, "button")==0)
+        buttonMap[id] = action;
+      }
+      else if (type == "axis")
+      {
+        int limit = 0;
+        if (pButton->QueryIntAttribute("limit", &limit) == TIXML_SUCCESS)
         {
-          buttonMap[id] = string(szAction);
-        }
-        else if (strcmpi(szType, "axis")==0)
-        {
-          int limit = 0;
-          if (pButton->QueryIntAttribute("limit", &limit) == TIXML_SUCCESS)
-          {
-            if (limit==-1)
-              axisMap[-id] = string(szAction);
-            else if (limit==1)
-              axisMap[id] = string(szAction);
-            else if (limit==0)
-              axisMap[id|0xFFFF0000] = string(szAction);
-            else
-            {
-              axisMap[id] = string(szAction);
-              axisMap[-id] = string(szAction);
-              CLog::Log(LOGERROR, "Error in joystick map, invalid limit specified %d for axis %d", limit, id);
-            }
-          }
+          if (limit==-1)
+            axisMap[-id] = action;
+          else if (limit==1)
+            axisMap[id] = action;
+          else if (limit==0)
+            axisMap[id|0xFFFF0000] = action;
           else
           {
-            axisMap[id] = string(szAction);
-            axisMap[-id] = string(szAction);
-          }
-        }
-        else if (strcmpi(szType, "hat")==0)
-        {
-          string position;
-          if (pButton->QueryValueAttribute("position", &position) == TIXML_SUCCESS)
-          {
-            uint32_t hatID = id|0xFFF00000;
-            if (position.compare("up") == 0)
-              hatMap[(JACTIVE_HAT_UP<<16)|hatID] = string(szAction);
-            else if (position.compare("down") == 0)
-              hatMap[(JACTIVE_HAT_DOWN<<16)|hatID] = string(szAction);
-            else if (position.compare("right") == 0)
-              hatMap[(JACTIVE_HAT_RIGHT<<16)|hatID] = string(szAction);
-            else if (position.compare("left") == 0)
-              hatMap[(JACTIVE_HAT_LEFT<<16)|hatID] = string(szAction);
-            else
-              CLog::Log(LOGERROR, "Error in joystick map, invalid position specified %s for axis %d", position.c_str(), id);
+            axisMap[id] = action;
+            axisMap[-id] = action;
+            CLog::Log(LOGERROR, "Error in joystick map, invalid limit specified %d for axis %d", limit, id);
           }
         }
         else
-          CLog::Log(LOGERROR, "Error reading joystick map element, unknown button type: %s", szType);
+        {
+          axisMap[id] = action;
+          axisMap[-id] = action;
+        }
+
+        if (windowID == -1) {
+          // in <global> we can override the rest state value of axes and whether they are triggers
+          bool trigger = false;
+          int restStateValue = 0;
+          pButton->QueryBoolAttribute("trigger", &trigger);
+          pButton->QueryIntAttribute("rest", &restStateValue);
+          // if it deviates from the defaults
+          if (trigger || restStateValue != 0)
+            axesConfig.push_back(AxisConfig(id, trigger, restStateValue));
+        }
       }
-      else if (strcmpi(szType, "altname")==0)
-        joynames.push_back(string(szAction));
+      else if (type == "hat")
+      {
+        std::string position;
+        if (pButton->QueryValueAttribute("position", &position) == TIXML_SUCCESS)
+        {
+          uint32_t hatID = id|0xFFF00000;
+          if (position.compare("up") == 0)
+            hatMap[(JACTIVE_HAT_UP<<16)|hatID] = action;
+          else if (position.compare("down") == 0)
+            hatMap[(JACTIVE_HAT_DOWN<<16)|hatID] = action;
+          else if (position.compare("right") == 0)
+            hatMap[(JACTIVE_HAT_RIGHT<<16)|hatID] = action;
+          else if (position.compare("left") == 0)
+            hatMap[(JACTIVE_HAT_LEFT<<16)|hatID] = action;
+          else
+            CLog::Log(LOGERROR, "Error in joystick map, invalid position specified %s for axis %d", position.c_str(), id);
+        }
+      }
       else
-        CLog::Log(LOGERROR, "Error reading joystick map element, Invalid id: %d", id);
+        CLog::Log(LOGERROR, "Error reading joystick map element, unknown button type: %s", type.c_str());
     }
     else
-      CLog::Log(LOGERROR, "Error reading joystick map element, skipping");
+      CLog::Log(LOGERROR, "Error reading joystick map element, Invalid id: %d", id);
 
     pButton = pButton->NextSiblingElement();
   }
-  vector<string>::iterator it = joynames.begin();
-  while (it!=joynames.end())
+
+  // add/overwrite keys with mapped actions
+  for (auto button : buttonMap)
+    m_joystickButtonMap[joyFamilyName][windowID][button.first] = button.second;
+
+  for (auto axis : axisMap)
+    m_joystickAxisMap[joyFamilyName][windowID][axis.first] = axis.second;
+
+  for (auto hat : hatMap)
+    m_joystickHatMap[joyFamilyName][windowID][hat.first] = hat.second;
+
+  if (windowID == -1) 
+    m_joystickAxesConfigs[joyFamilyName] = axesConfig;
+}
+
+std::string CButtonTranslator::JoynameToRegex(const std::string& joyName) const
+{
+  if (joyName.empty()) 
+    return joyName;
+
+  // names already presented as regex are identified by a leading /
+  else if (joyName[0] == '/') 
+    return joyName.substr(1);
+
+  // the others we'll have to escape
+  return "\\Q" + joyName + "\\E";
+}
+
+bool CButtonTranslator::AddFamilyRegex(JoystickFamily* family, std::shared_ptr<CRegExp> regex)
+{
+  // even though family is a set, this does not prevent the same regex 
+  // from being added twice, so we manually match on pattern equality
+  JoystickFamily::iterator it;
+  for (it = family->begin(); it != family->end(); it++)
   {
-    m_joystickButtonMap[*it][windowID] = buttonMap;
-    m_joystickAxisMap[*it][windowID] = axisMap;
-    m_joystickHatMap[*it][windowID] = hatMap;
-//    CLog::Log(LOGDEBUG, "Found Joystick map for window %d using %s", windowID, it->c_str());
-    it++;
+    if ((*it)->GetPattern() == regex->GetPattern())
+      return false;
+  }
+  family->insert(regex);
+  return true;
+}
+
+const AxesConfig* CButtonTranslator::GetAxesConfigFor(const std::string& joyName) const
+{
+  JoystickFamilyMap::const_iterator familyIt = FindJoystickFamily(joyName);
+  if (familyIt == m_joystickFamilies.end())
+    return NULL;
+  else {
+    std::map<std::string, AxesConfig>::const_iterator it = m_joystickAxesConfigs.find(familyIt->first);
+    if (it == m_joystickAxesConfigs.end())
+      return NULL;
+    else
+      return &it->second;
   }
 }
 
-bool CButtonTranslator::TranslateJoystickString(int window, const char* szDevice, int id, short inputType, int& action, CStdString& strAction, bool &fullrange)
+CButtonTranslator::JoystickMap::const_iterator CButtonTranslator::FindWindowMap(const std::string& joyName, const JoystickMap &maps) const
+{
+  JoystickFamilyMap::const_iterator familyIt = FindJoystickFamily(joyName);
+  if (familyIt == m_joystickFamilies.end())
+    return maps.end();
+  else
+    return maps.find(familyIt->first);
+}
+
+CButtonTranslator::JoystickFamilyMap::const_iterator CButtonTranslator::FindJoystickFamily(const std::string& joyName) const
+{
+  // find the family corresponding to a joystick name
+  JoystickFamilyMap::const_iterator it;
+  for (it = m_joystickFamilies.begin(); it != m_joystickFamilies.end(); it++)
+  {
+    JoystickFamily::const_iterator regexIt;
+    for (regexIt = it->second.begin(); regexIt != it->second.end(); regexIt++)
+    {
+      if ((*regexIt)->RegFind(joyName) >= 0)
+      {
+        // CLog::Log(LOGDEBUG, "Regex %s matches joystick %s", it->first->GetPattern().c_str(), joyName.c_str());
+        return it;
+      }
+    }
+  }
+  return it;
+}
+
+bool CButtonTranslator::TranslateJoystickString(int window, const std::string& joyName, int id, short inputType, int& action, std::string& strAction, bool &fullrange)
 {
   fullrange = false;
 
   // resolve the correct JoystickMap
-  map<string, JoystickMap> *jmap;
+  JoystickMap *jmap;
   if (inputType == JACTIVE_AXIS)
     jmap = &m_joystickAxisMap;
   else if (inputType == JACTIVE_BUTTON)
@@ -863,34 +1021,34 @@ bool CButtonTranslator::TranslateJoystickString(int window, const char* szDevice
     return false;
   }
 
-  map<string, JoystickMap>::iterator it = jmap->find(szDevice);
+  JoystickMap::const_iterator it = FindWindowMap(joyName, *jmap);
   if (it==jmap->end())
   {
-    it = jmap->find(JOYSTICK_DEFAULT_MAP); // default global map name
+    it = FindWindowMap(JOYSTICK_DEFAULT_MAP, *jmap); // default global map name
     if (it==jmap->end())
       return false;
   }
 
-  JoystickMap wmap = it->second;
+  const WindowMap *wmap = &it->second;
 
   // try to get the action from the current window
-  action = GetActionCode(window, id, wmap, strAction, fullrange);
+  action = GetActionCode(window, id, *wmap, strAction, fullrange);
 
   // if it's invalid, try to get it from a fallback window or the global map
   if (action == 0)
   {
     int fallbackWindow = GetFallbackWindow(window);
     if (fallbackWindow > -1)
-      action = GetActionCode(fallbackWindow, id, wmap, strAction, fullrange);
+      action = GetActionCode(fallbackWindow, id, *wmap, strAction, fullrange);
     // still no valid action? use global map
     if (action == 0)
-      action = GetActionCode(-1, id, wmap, strAction, fullrange);
+      action = GetActionCode(-1, id, *wmap, strAction, fullrange);
   }
 
   return (action > 0);
 }
 
-bool CButtonTranslator::TranslateTouchAction(int window, int touchAction, int touchPointers, int &action)
+bool CButtonTranslator::TranslateTouchAction(int window, int touchAction, int touchPointers, int &action, std::string &actionString)
 {
   action = 0;
   if (touchPointers <= 0)
@@ -899,16 +1057,22 @@ bool CButtonTranslator::TranslateTouchAction(int window, int touchAction, int to
   touchAction += touchPointers - 1;
   touchAction |= KEY_TOUCH;
 
-  action = GetTouchActionCode(window, touchAction);
+  action = GetTouchActionCode(window, touchAction, actionString);
   if (action <= 0)
-    action = GetTouchActionCode(-1, touchAction);
+  {
+    int fallbackWindow = GetFallbackWindow(window);
+    if (fallbackWindow > -1)
+      action = GetTouchActionCode(fallbackWindow, touchAction, actionString);
+    if (action <= 0)
+      action = GetTouchActionCode(-1, touchAction, actionString);
+  }
 
   return action > 0;
 }
 
 int CButtonTranslator::GetActionCode(int window, int action)
 {
-  map<int, buttonMap>::const_iterator it = m_translatorMap.find(window);
+  std::map<int, buttonMap>::const_iterator it = m_translatorMap.find(window);
   if (it == m_translatorMap.end())
     return 0;
 
@@ -922,16 +1086,16 @@ int CButtonTranslator::GetActionCode(int window, int action)
 /*
  * Translates a joystick input to an action code
  */
-int CButtonTranslator::GetActionCode(int window, int id, const JoystickMap &wmap, CStdString &strAction, bool &fullrange) const
+int CButtonTranslator::GetActionCode(int window, int id, const WindowMap &wmap, std::string &strAction, bool &fullrange) const
 {
   int action = 0;
   bool found = false;
 
-  JoystickMap::const_iterator it = wmap.find(window);
+  WindowMap::const_iterator it = wmap.find(window);
   if (it != wmap.end())
   {
-    const map<int, string> &windowbmap = it->second;
-    map<int, string>::const_iterator it2 = windowbmap.find(id);
+    const std::map<int, std::string> &windowbmap = it->second;
+    std::map<int, std::string>::const_iterator it2 = windowbmap.find(id);
     if (it2 != windowbmap.end())
     {
       strAction = (it2->second).c_str();
@@ -981,14 +1145,13 @@ void CButtonTranslator::GetWindows(std::vector<std::string> &windowList)
 
 int CButtonTranslator::GetFallbackWindow(int windowID)
 {
-  for (unsigned int index = 0; index < sizeof(fallbackWindows) / sizeof(fallbackWindows[0]); ++index)
+  for (unsigned int index = 0; index < ARRAY_SIZE(fallbackWindows); ++index)
   {
     if (fallbackWindows[index].origin == windowID)
       return fallbackWindows[index].target;
   }
-  // for addon windows use WINDOW_ADDON_START
-  // because id is dynamic
-  if (windowID >= WINDOW_ADDON_START && windowID <= WINDOW_ADDON_END)
+  // for addon windows use WINDOW_ADDON_START because id is dynamic
+  if (windowID > WINDOW_ADDON_START && windowID <= WINDOW_ADDON_END)
     return WINDOW_ADDON_START;
 
   return -1;
@@ -996,7 +1159,7 @@ int CButtonTranslator::GetFallbackWindow(int windowID)
 
 CAction CButtonTranslator::GetAction(int window, const CKey &key, bool fallback)
 {
-  CStdString strAction;
+  std::string strAction;
   // try to get the action from the current window
   int actionID = GetActionCode(window, key, strAction);
   // if it's invalid, try to get it from the global map
@@ -1014,20 +1177,68 @@ CAction CButtonTranslator::GetAction(int window, const CKey &key, bool fallback)
   return action;
 }
 
-int CButtonTranslator::GetActionCode(int window, const CKey &key, CStdString &strAction) const
+CAction CButtonTranslator::GetGlobalAction(const CKey &key)
+{
+  return GetAction(-1, key, true);
+}
+
+bool CButtonTranslator::HasLonpressMapping(int window, const CKey &key)
+{
+  std::map<int, buttonMap>::const_iterator it = m_translatorMap.find(window);
+  if (it != m_translatorMap.end())
+  {
+    uint32_t code = key.GetButtonCode();
+    code |= CKey::MODIFIER_LONG;
+    buttonMap::const_iterator it2 = (*it).second.find(code);
+
+    if (it2 != (*it).second.end())
+      return true;
+
+#ifdef TARGET_POSIX
+    // Some buttoncodes changed in Hardy
+    if ((code & KEY_VKEY) == KEY_VKEY && (code & 0x0F00))
+    {
+      code &= ~0x0F00;
+      it2 = (*it).second.find(code);
+      if (it2 != (*it).second.end())
+        return true;
+    }
+#endif
+  }
+
+  // no key mapping found for the current window do the fallback handling
+  if (window > -1)
+  {
+    // first check if we have a fallback for the window
+    int fallbackWindow = GetFallbackWindow(window);
+    if (fallbackWindow > -1 && HasLonpressMapping(fallbackWindow, key))
+      return true;
+
+    // fallback to default section
+    return HasLonpressMapping(-1, key);
+  }
+
+  return false;
+}
+
+int CButtonTranslator::GetActionCode(int window, const CKey &key, std::string &strAction) const
 {
   uint32_t code = key.GetButtonCode();
 
-  map<int, buttonMap>::const_iterator it = m_translatorMap.find(window);
+  std::map<int, buttonMap>::const_iterator it = m_translatorMap.find(window);
   if (it == m_translatorMap.end())
     return 0;
   buttonMap::const_iterator it2 = (*it).second.find(code);
   int action = 0;
-  while (it2 != (*it).second.end())
+  if (it2 == (*it).second.end() && code & CKey::MODIFIER_LONG) // If long action not found, try short one
+  {
+    code &= ~CKey::MODIFIER_LONG;
+    it2 = (*it).second.find(code);
+  }
+  if (it2 != (*it).second.end())
   {
     action = (*it2).second.id;
     strAction = (*it2).second.strID;
-    it2 = (*it).second.end();
   }
 #ifdef TARGET_POSIX
   // Some buttoncodes changed in Hardy
@@ -1035,12 +1246,11 @@ int CButtonTranslator::GetActionCode(int window, const CKey &key, CStdString &st
   {
     CLog::Log(LOGDEBUG, "%s: Trying Hardy keycode for %#04x", __FUNCTION__, code);
     code &= ~0x0F00;
-    buttonMap::const_iterator it2 = (*it).second.find(code);
-    while (it2 != (*it).second.end())
+    it2 = (*it).second.find(code);
+    if (it2 != (*it).second.end())
     {
       action = (*it2).second.id;
       strAction = (*it2).second.strID;
-      it2 = (*it).second.end();
     }
   }
 #endif
@@ -1065,11 +1275,11 @@ void CButtonTranslator::MapAction(uint32_t buttonCode, const char *szAction, but
     CButtonAction button;
     button.id = action;
     button.strID = szAction;
-    map.insert(pair<uint32_t, CButtonAction>(buttonCode, button));
+    map.insert(std::pair<uint32_t, CButtonAction>(buttonCode, button));
   }
 }
 
-bool CButtonTranslator::HasDeviceType(TiXmlNode *pWindow, CStdString type)
+bool CButtonTranslator::HasDeviceType(TiXmlNode *pWindow, std::string type)
 {
   return pWindow->FirstChild(type) != NULL;
 }
@@ -1084,7 +1294,7 @@ void CButtonTranslator::MapWindowActions(TiXmlNode *pWindow, int windowID)
   const char* types[] = {"gamepad", "remote", "universalremote", "keyboard", "mouse", "appcommand", NULL};
   for (int i = 0; types[i]; ++i)
   {
-    CStdString type(types[i]);
+    std::string type(types[i]);
     if (HasDeviceType(pWindow, type))
     {
       buttonMap map;
@@ -1111,7 +1321,7 @@ void CButtonTranslator::MapWindowActions(TiXmlNode *pWindow, int windowID)
         else if (type == "keyboard")
             buttonCode = TranslateKeyboardButton(pButton);
         else if (type == "mouse")
-            buttonCode = TranslateMouseCommand(pButton->Value());
+            buttonCode = TranslateMouseCommand(pButton);
         else if (type == "appcommand")
             buttonCode = TranslateAppCommand(pButton->Value());
 
@@ -1122,7 +1332,7 @@ void CButtonTranslator::MapWindowActions(TiXmlNode *pWindow, int windowID)
 
       // add our map to our table
       if (!map.empty())
-        m_translatorMap.insert(pair<int, buttonMap>( windowID, map));
+        m_translatorMap.insert(std::pair<int, buttonMap>( windowID, map));
     }
   }
 
@@ -1152,14 +1362,14 @@ void CButtonTranslator::MapWindowActions(TiXmlNode *pWindow, int windowID)
 bool CButtonTranslator::TranslateActionString(const char *szAction, int &action)
 {
   action = ACTION_NONE;
-  CStdString strAction = szAction;
+  std::string strAction = szAction;
   StringUtils::ToLower(strAction);
-  if (CBuiltins::HasCommand(strAction)) 
+  if (CBuiltins::GetInstance().HasCommand(strAction))
     action = ACTION_BUILT_IN_FUNCTION;
 
-  for (unsigned int index=0;index < sizeof(actions)/sizeof(actions[0]);++index)
+  for (unsigned int index=0;index < ARRAY_SIZE(actions);++index)
   {
-    if (strAction.Equals(actions[index].name))
+    if (strAction == actions[index].name)
     {
       action = actions[index].action;
       break;
@@ -1175,9 +1385,9 @@ bool CButtonTranslator::TranslateActionString(const char *szAction, int &action)
   return true;
 }
 
-CStdString CButtonTranslator::TranslateWindow(int windowID)
+std::string CButtonTranslator::TranslateWindow(int windowID)
 {
-  for (unsigned int index = 0; index < sizeof(windows) / sizeof(windows[0]); ++index)
+  for (unsigned int index = 0; index < ARRAY_SIZE(windows); ++index)
   {
     if (windows[index].action == windowID)
       return windows[index].name;
@@ -1185,9 +1395,9 @@ CStdString CButtonTranslator::TranslateWindow(int windowID)
   return "";
 }
 
-int CButtonTranslator::TranslateWindow(const CStdString &window)
+int CButtonTranslator::TranslateWindow(const std::string &window)
 {
-  CStdString strWindow(window);
+  std::string strWindow(window);
   if (strWindow.empty()) 
     return WINDOW_INVALID;
   StringUtils::ToLower(strWindow);
@@ -1210,9 +1420,9 @@ int CButtonTranslator::TranslateWindow(const CStdString &window)
   }
 
   // run through the window structure
-  for (unsigned int index = 0; index < sizeof(windows) / sizeof(windows[0]); ++index)
+  for (unsigned int index = 0; index < ARRAY_SIZE(windows); ++index)
   {
-    if (strWindow.Equals(windows[index].name))
+    if (strWindow == windows[index].name)
       return windows[index].action;
   }
 
@@ -1225,36 +1435,36 @@ uint32_t CButtonTranslator::TranslateGamepadString(const char *szButton)
   if (!szButton) 
     return 0;
   uint32_t buttonCode = 0;
-  CStdString strButton = szButton;
+  std::string strButton = szButton;
   StringUtils::ToLower(strButton);
-  if (strButton.Equals("a")) buttonCode = KEY_BUTTON_A;
-  else if (strButton.Equals("b")) buttonCode = KEY_BUTTON_B;
-  else if (strButton.Equals("x")) buttonCode = KEY_BUTTON_X;
-  else if (strButton.Equals("y")) buttonCode = KEY_BUTTON_Y;
-  else if (strButton.Equals("white")) buttonCode = KEY_BUTTON_WHITE;
-  else if (strButton.Equals("black")) buttonCode = KEY_BUTTON_BLACK;
-  else if (strButton.Equals("start")) buttonCode = KEY_BUTTON_START;
-  else if (strButton.Equals("back")) buttonCode = KEY_BUTTON_BACK;
-  else if (strButton.Equals("leftthumbbutton")) buttonCode = KEY_BUTTON_LEFT_THUMB_BUTTON;
-  else if (strButton.Equals("rightthumbbutton")) buttonCode = KEY_BUTTON_RIGHT_THUMB_BUTTON;
-  else if (strButton.Equals("leftthumbstick")) buttonCode = KEY_BUTTON_LEFT_THUMB_STICK;
-  else if (strButton.Equals("leftthumbstickup")) buttonCode = KEY_BUTTON_LEFT_THUMB_STICK_UP;
-  else if (strButton.Equals("leftthumbstickdown")) buttonCode = KEY_BUTTON_LEFT_THUMB_STICK_DOWN;
-  else if (strButton.Equals("leftthumbstickleft")) buttonCode = KEY_BUTTON_LEFT_THUMB_STICK_LEFT;
-  else if (strButton.Equals("leftthumbstickright")) buttonCode = KEY_BUTTON_LEFT_THUMB_STICK_RIGHT;
-  else if (strButton.Equals("rightthumbstick")) buttonCode = KEY_BUTTON_RIGHT_THUMB_STICK;
-  else if (strButton.Equals("rightthumbstickup")) buttonCode = KEY_BUTTON_RIGHT_THUMB_STICK_UP;
-  else if (strButton.Equals("rightthumbstickdown")) buttonCode = KEY_BUTTON_RIGHT_THUMB_STICK_DOWN;
-  else if (strButton.Equals("rightthumbstickleft")) buttonCode = KEY_BUTTON_RIGHT_THUMB_STICK_LEFT;
-  else if (strButton.Equals("rightthumbstickright")) buttonCode = KEY_BUTTON_RIGHT_THUMB_STICK_RIGHT;
-  else if (strButton.Equals("lefttrigger")) buttonCode = KEY_BUTTON_LEFT_TRIGGER;
-  else if (strButton.Equals("righttrigger")) buttonCode = KEY_BUTTON_RIGHT_TRIGGER;
-  else if (strButton.Equals("leftanalogtrigger")) buttonCode = KEY_BUTTON_LEFT_ANALOG_TRIGGER;
-  else if (strButton.Equals("rightanalogtrigger")) buttonCode = KEY_BUTTON_RIGHT_ANALOG_TRIGGER;
-  else if (strButton.Equals("dpadleft")) buttonCode = KEY_BUTTON_DPAD_LEFT;
-  else if (strButton.Equals("dpadright")) buttonCode = KEY_BUTTON_DPAD_RIGHT;
-  else if (strButton.Equals("dpadup")) buttonCode = KEY_BUTTON_DPAD_UP;
-  else if (strButton.Equals("dpaddown")) buttonCode = KEY_BUTTON_DPAD_DOWN;
+  if (strButton == "a") buttonCode = KEY_BUTTON_A;
+  else if (strButton == "b") buttonCode = KEY_BUTTON_B;
+  else if (strButton == "x") buttonCode = KEY_BUTTON_X;
+  else if (strButton == "y") buttonCode = KEY_BUTTON_Y;
+  else if (strButton == "white") buttonCode = KEY_BUTTON_WHITE;
+  else if (strButton == "black") buttonCode = KEY_BUTTON_BLACK;
+  else if (strButton == "start") buttonCode = KEY_BUTTON_START;
+  else if (strButton == "back") buttonCode = KEY_BUTTON_BACK;
+  else if (strButton == "leftthumbbutton") buttonCode = KEY_BUTTON_LEFT_THUMB_BUTTON;
+  else if (strButton == "rightthumbbutton") buttonCode = KEY_BUTTON_RIGHT_THUMB_BUTTON;
+  else if (strButton == "leftthumbstick") buttonCode = KEY_BUTTON_LEFT_THUMB_STICK;
+  else if (strButton == "leftthumbstickup") buttonCode = KEY_BUTTON_LEFT_THUMB_STICK_UP;
+  else if (strButton == "leftthumbstickdown") buttonCode = KEY_BUTTON_LEFT_THUMB_STICK_DOWN;
+  else if (strButton == "leftthumbstickleft") buttonCode = KEY_BUTTON_LEFT_THUMB_STICK_LEFT;
+  else if (strButton == "leftthumbstickright") buttonCode = KEY_BUTTON_LEFT_THUMB_STICK_RIGHT;
+  else if (strButton == "rightthumbstick") buttonCode = KEY_BUTTON_RIGHT_THUMB_STICK;
+  else if (strButton == "rightthumbstickup") buttonCode = KEY_BUTTON_RIGHT_THUMB_STICK_UP;
+  else if (strButton == "rightthumbstickdown") buttonCode = KEY_BUTTON_RIGHT_THUMB_STICK_DOWN;
+  else if (strButton == "rightthumbstickleft") buttonCode = KEY_BUTTON_RIGHT_THUMB_STICK_LEFT;
+  else if (strButton == "rightthumbstickright") buttonCode = KEY_BUTTON_RIGHT_THUMB_STICK_RIGHT;
+  else if (strButton == "lefttrigger") buttonCode = KEY_BUTTON_LEFT_TRIGGER;
+  else if (strButton == "righttrigger") buttonCode = KEY_BUTTON_RIGHT_TRIGGER;
+  else if (strButton == "leftanalogtrigger") buttonCode = KEY_BUTTON_LEFT_ANALOG_TRIGGER;
+  else if (strButton == "rightanalogtrigger") buttonCode = KEY_BUTTON_RIGHT_ANALOG_TRIGGER;
+  else if (strButton == "dpadleft") buttonCode = KEY_BUTTON_DPAD_LEFT;
+  else if (strButton == "dpadright") buttonCode = KEY_BUTTON_DPAD_RIGHT;
+  else if (strButton == "dpadup") buttonCode = KEY_BUTTON_DPAD_UP;
+  else if (strButton == "dpaddown") buttonCode = KEY_BUTTON_DPAD_DOWN;
   else CLog::Log(LOGERROR, "Gamepad Translator: Can't find button %s", strButton.c_str());
   return buttonCode;
 }
@@ -1264,69 +1474,74 @@ uint32_t CButtonTranslator::TranslateRemoteString(const char *szButton)
   if (!szButton) 
     return 0;
   uint32_t buttonCode = 0;
-  CStdString strButton = szButton;
+  std::string strButton = szButton;
   StringUtils::ToLower(strButton);
-  if (strButton.Equals("left")) buttonCode = XINPUT_IR_REMOTE_LEFT;
-  else if (strButton.Equals("right")) buttonCode = XINPUT_IR_REMOTE_RIGHT;
-  else if (strButton.Equals("up")) buttonCode = XINPUT_IR_REMOTE_UP;
-  else if (strButton.Equals("down")) buttonCode = XINPUT_IR_REMOTE_DOWN;
-  else if (strButton.Equals("select")) buttonCode = XINPUT_IR_REMOTE_SELECT;
-  else if (strButton.Equals("back")) buttonCode = XINPUT_IR_REMOTE_BACK;
-  else if (strButton.Equals("menu")) buttonCode = XINPUT_IR_REMOTE_MENU;
-  else if (strButton.Equals("info")) buttonCode = XINPUT_IR_REMOTE_INFO;
-  else if (strButton.Equals("display")) buttonCode = XINPUT_IR_REMOTE_DISPLAY;
-  else if (strButton.Equals("title")) buttonCode = XINPUT_IR_REMOTE_TITLE;
-  else if (strButton.Equals("play")) buttonCode = XINPUT_IR_REMOTE_PLAY;
-  else if (strButton.Equals("pause")) buttonCode = XINPUT_IR_REMOTE_PAUSE;
-  else if (strButton.Equals("reverse")) buttonCode = XINPUT_IR_REMOTE_REVERSE;
-  else if (strButton.Equals("forward")) buttonCode = XINPUT_IR_REMOTE_FORWARD;
-  else if (strButton.Equals("skipplus")) buttonCode = XINPUT_IR_REMOTE_SKIP_PLUS;
-  else if (strButton.Equals("skipminus")) buttonCode = XINPUT_IR_REMOTE_SKIP_MINUS;
-  else if (strButton.Equals("stop")) buttonCode = XINPUT_IR_REMOTE_STOP;
-  else if (strButton.Equals("zero")) buttonCode = XINPUT_IR_REMOTE_0;
-  else if (strButton.Equals("one")) buttonCode = XINPUT_IR_REMOTE_1;
-  else if (strButton.Equals("two")) buttonCode = XINPUT_IR_REMOTE_2;
-  else if (strButton.Equals("three")) buttonCode = XINPUT_IR_REMOTE_3;
-  else if (strButton.Equals("four")) buttonCode = XINPUT_IR_REMOTE_4;
-  else if (strButton.Equals("five")) buttonCode = XINPUT_IR_REMOTE_5;
-  else if (strButton.Equals("six")) buttonCode = XINPUT_IR_REMOTE_6;
-  else if (strButton.Equals("seven")) buttonCode = XINPUT_IR_REMOTE_7;
-  else if (strButton.Equals("eight")) buttonCode = XINPUT_IR_REMOTE_8;
-  else if (strButton.Equals("nine")) buttonCode = XINPUT_IR_REMOTE_9;
+  if (strButton == "left") buttonCode = XINPUT_IR_REMOTE_LEFT;
+  else if (strButton == "right") buttonCode = XINPUT_IR_REMOTE_RIGHT;
+  else if (strButton == "up") buttonCode = XINPUT_IR_REMOTE_UP;
+  else if (strButton == "down") buttonCode = XINPUT_IR_REMOTE_DOWN;
+  else if (strButton == "select") buttonCode = XINPUT_IR_REMOTE_SELECT;
+  else if (strButton == "back") buttonCode = XINPUT_IR_REMOTE_BACK;
+  else if (strButton == "menu") buttonCode = XINPUT_IR_REMOTE_MENU;
+  else if (strButton == "info") buttonCode = XINPUT_IR_REMOTE_INFO;
+  else if (strButton == "display") buttonCode = XINPUT_IR_REMOTE_DISPLAY;
+  else if (strButton == "title") buttonCode = XINPUT_IR_REMOTE_TITLE;
+  else if (strButton == "play") buttonCode = XINPUT_IR_REMOTE_PLAY;
+  else if (strButton == "pause") buttonCode = XINPUT_IR_REMOTE_PAUSE;
+  else if (strButton == "reverse") buttonCode = XINPUT_IR_REMOTE_REVERSE;
+  else if (strButton == "forward") buttonCode = XINPUT_IR_REMOTE_FORWARD;
+  else if (strButton == "skipplus") buttonCode = XINPUT_IR_REMOTE_SKIP_PLUS;
+  else if (strButton == "skipminus") buttonCode = XINPUT_IR_REMOTE_SKIP_MINUS;
+  else if (strButton == "stop") buttonCode = XINPUT_IR_REMOTE_STOP;
+  else if (strButton == "zero") buttonCode = XINPUT_IR_REMOTE_0;
+  else if (strButton == "one") buttonCode = XINPUT_IR_REMOTE_1;
+  else if (strButton == "two") buttonCode = XINPUT_IR_REMOTE_2;
+  else if (strButton == "three") buttonCode = XINPUT_IR_REMOTE_3;
+  else if (strButton == "four") buttonCode = XINPUT_IR_REMOTE_4;
+  else if (strButton == "five") buttonCode = XINPUT_IR_REMOTE_5;
+  else if (strButton == "six") buttonCode = XINPUT_IR_REMOTE_6;
+  else if (strButton == "seven") buttonCode = XINPUT_IR_REMOTE_7;
+  else if (strButton == "eight") buttonCode = XINPUT_IR_REMOTE_8;
+  else if (strButton == "nine") buttonCode = XINPUT_IR_REMOTE_9;
   // additional keys from the media center extender for xbox remote
-  else if (strButton.Equals("power")) buttonCode = XINPUT_IR_REMOTE_POWER;
-  else if (strButton.Equals("mytv")) buttonCode = XINPUT_IR_REMOTE_MY_TV;
-  else if (strButton.Equals("mymusic")) buttonCode = XINPUT_IR_REMOTE_MY_MUSIC;
-  else if (strButton.Equals("mypictures")) buttonCode = XINPUT_IR_REMOTE_MY_PICTURES;
-  else if (strButton.Equals("myvideo")) buttonCode = XINPUT_IR_REMOTE_MY_VIDEOS;
-  else if (strButton.Equals("record")) buttonCode = XINPUT_IR_REMOTE_RECORD;
-  else if (strButton.Equals("start")) buttonCode = XINPUT_IR_REMOTE_START;
-  else if (strButton.Equals("volumeplus")) buttonCode = XINPUT_IR_REMOTE_VOLUME_PLUS;
-  else if (strButton.Equals("volumeminus")) buttonCode = XINPUT_IR_REMOTE_VOLUME_MINUS;
-  else if (strButton.Equals("channelplus")) buttonCode = XINPUT_IR_REMOTE_CHANNEL_PLUS;
-  else if (strButton.Equals("channelminus")) buttonCode = XINPUT_IR_REMOTE_CHANNEL_MINUS;
-  else if (strButton.Equals("pageplus")) buttonCode = XINPUT_IR_REMOTE_CHANNEL_PLUS;
-  else if (strButton.Equals("pageminus")) buttonCode = XINPUT_IR_REMOTE_CHANNEL_MINUS;
-  else if (strButton.Equals("mute")) buttonCode = XINPUT_IR_REMOTE_MUTE;
-  else if (strButton.Equals("recordedtv")) buttonCode = XINPUT_IR_REMOTE_RECORDED_TV;
-  else if (strButton.Equals("guide")) buttonCode = XINPUT_IR_REMOTE_GUIDE;
-  else if (strButton.Equals("livetv")) buttonCode = XINPUT_IR_REMOTE_LIVE_TV;
-  else if (strButton.Equals("liveradio")) buttonCode = XINPUT_IR_REMOTE_LIVE_RADIO;
-  else if (strButton.Equals("epgsearch")) buttonCode = XINPUT_IR_REMOTE_EPG_SEARCH;
-  else if (strButton.Equals("star")) buttonCode = XINPUT_IR_REMOTE_STAR;
-  else if (strButton.Equals("hash")) buttonCode = XINPUT_IR_REMOTE_HASH;
-  else if (strButton.Equals("clear")) buttonCode = XINPUT_IR_REMOTE_CLEAR;
-  else if (strButton.Equals("enter")) buttonCode = XINPUT_IR_REMOTE_ENTER;
-  else if (strButton.Equals("xbox")) buttonCode = XINPUT_IR_REMOTE_DISPLAY; // same as display
-  else if (strButton.Equals("playlist")) buttonCode = XINPUT_IR_REMOTE_PLAYLIST;
-  else if (strButton.Equals("guide")) buttonCode = XINPUT_IR_REMOTE_GUIDE;
-  else if (strButton.Equals("teletext")) buttonCode = XINPUT_IR_REMOTE_TELETEXT;
-  else if (strButton.Equals("red")) buttonCode = XINPUT_IR_REMOTE_RED;
-  else if (strButton.Equals("green")) buttonCode = XINPUT_IR_REMOTE_GREEN;
-  else if (strButton.Equals("yellow")) buttonCode = XINPUT_IR_REMOTE_YELLOW;
-  else if (strButton.Equals("blue")) buttonCode = XINPUT_IR_REMOTE_BLUE;
-  else if (strButton.Equals("subtitle")) buttonCode = XINPUT_IR_REMOTE_SUBTITLE;
-  else if (strButton.Equals("language")) buttonCode = XINPUT_IR_REMOTE_LANGUAGE;
+  else if (strButton == "power") buttonCode = XINPUT_IR_REMOTE_POWER;
+  else if (strButton == "mytv") buttonCode = XINPUT_IR_REMOTE_MY_TV;
+  else if (strButton == "mymusic") buttonCode = XINPUT_IR_REMOTE_MY_MUSIC;
+  else if (strButton == "mypictures") buttonCode = XINPUT_IR_REMOTE_MY_PICTURES;
+  else if (strButton == "myvideo") buttonCode = XINPUT_IR_REMOTE_MY_VIDEOS;
+  else if (strButton == "record") buttonCode = XINPUT_IR_REMOTE_RECORD;
+  else if (strButton == "start") buttonCode = XINPUT_IR_REMOTE_START;
+  else if (strButton == "volumeplus") buttonCode = XINPUT_IR_REMOTE_VOLUME_PLUS;
+  else if (strButton == "volumeminus") buttonCode = XINPUT_IR_REMOTE_VOLUME_MINUS;
+  else if (strButton == "channelplus") buttonCode = XINPUT_IR_REMOTE_CHANNEL_PLUS;
+  else if (strButton == "channelminus") buttonCode = XINPUT_IR_REMOTE_CHANNEL_MINUS;
+  else if (strButton == "pageplus") buttonCode = XINPUT_IR_REMOTE_CHANNEL_PLUS;
+  else if (strButton == "pageminus") buttonCode = XINPUT_IR_REMOTE_CHANNEL_MINUS;
+  else if (strButton == "mute") buttonCode = XINPUT_IR_REMOTE_MUTE;
+  else if (strButton == "recordedtv") buttonCode = XINPUT_IR_REMOTE_RECORDED_TV;
+  else if (strButton == "guide") buttonCode = XINPUT_IR_REMOTE_GUIDE;
+  else if (strButton == "livetv") buttonCode = XINPUT_IR_REMOTE_LIVE_TV;
+  else if (strButton == "liveradio") buttonCode = XINPUT_IR_REMOTE_LIVE_RADIO;
+  else if (strButton == "epgsearch") buttonCode = XINPUT_IR_REMOTE_EPG_SEARCH;
+  else if (strButton == "star") buttonCode = XINPUT_IR_REMOTE_STAR;
+  else if (strButton == "hash") buttonCode = XINPUT_IR_REMOTE_HASH;
+  else if (strButton == "clear") buttonCode = XINPUT_IR_REMOTE_CLEAR;
+  else if (strButton == "enter") buttonCode = XINPUT_IR_REMOTE_ENTER;
+  else if (strButton == "xbox") buttonCode = XINPUT_IR_REMOTE_DISPLAY; // same as display
+  else if (strButton == "playlist") buttonCode = XINPUT_IR_REMOTE_PLAYLIST;
+  else if (strButton == "teletext") buttonCode = XINPUT_IR_REMOTE_TELETEXT;
+  else if (strButton == "red") buttonCode = XINPUT_IR_REMOTE_RED;
+  else if (strButton == "green") buttonCode = XINPUT_IR_REMOTE_GREEN;
+  else if (strButton == "yellow") buttonCode = XINPUT_IR_REMOTE_YELLOW;
+  else if (strButton == "blue") buttonCode = XINPUT_IR_REMOTE_BLUE;
+  else if (strButton == "subtitle") buttonCode = XINPUT_IR_REMOTE_SUBTITLE;
+  else if (strButton == "language") buttonCode = XINPUT_IR_REMOTE_LANGUAGE;
+  else if (strButton == "eject") buttonCode = XINPUT_IR_REMOTE_EJECT;
+  else if (strButton == "contentsmenu") buttonCode = XINPUT_IR_REMOTE_CONTENTS_MENU;
+  else if (strButton == "rootmenu") buttonCode = XINPUT_IR_REMOTE_ROOT_MENU;
+  else if (strButton == "topmenu") buttonCode = XINPUT_IR_REMOTE_TOP_MENU;
+  else if (strButton == "dvdmenu") buttonCode = XINPUT_IR_REMOTE_DVD_MENU;
+  else if (strButton == "print") buttonCode = XINPUT_IR_REMOTE_PRINT;
   else CLog::Log(LOGERROR, "Remote Translator: Can't find button %s", strButton.c_str());
   return buttonCode;
 }
@@ -1372,8 +1587,8 @@ uint32_t CButtonTranslator::TranslateKeyboardButton(TiXmlElement *pButton)
 
   if (!szButton) 
     return 0;
-  CStdString strKey = szButton;
-  if (strKey.Equals("key"))
+  const std::string strKey = szButton;
+  if (strKey == "key")
   {
     std::string strID;
     if (pButton->QueryValueAttribute("id", &strID) == TIXML_SUCCESS)
@@ -1393,16 +1608,15 @@ uint32_t CButtonTranslator::TranslateKeyboardButton(TiXmlElement *pButton)
     button_id = TranslateKeyboardString(szButton);
 
   // Process the ctrl/shift/alt modifiers
-  CStdString strMod;
+  std::string strMod;
   if (pButton->QueryValueAttribute("mod", &strMod) == TIXML_SUCCESS)
   {
     StringUtils::ToLower(strMod);
 
-    CStdStringArray modArray;
-    StringUtils::SplitString(strMod, ",", modArray);
-    for (unsigned int i = 0; i < modArray.size(); i++)
+    std::vector<std::string> modArray = StringUtils::Split(strMod, ",");
+    for (std::vector<std::string>::const_iterator i = modArray.begin(); i != modArray.end(); ++i)
     {
-      CStdString& substr = modArray[i];
+      std::string substr = *i;
       StringUtils::Trim(substr);
 
       if (substr == "ctrl" || substr == "control")
@@ -1415,6 +1629,8 @@ uint32_t CButtonTranslator::TranslateKeyboardButton(TiXmlElement *pButton)
         button_id |= CKey::MODIFIER_SUPER;
       else if (substr == "meta" || substr == "cmd")
         button_id |= CKey::MODIFIER_META;
+      else if (substr == "longpress")
+        button_id |= CKey::MODIFIER_LONG;
       else
         CLog::Log(LOGERROR, "Keyboard Translator: Unknown key modifier %s in %s", substr.c_str(), strMod.c_str());
      }
@@ -1426,11 +1642,11 @@ uint32_t CButtonTranslator::TranslateKeyboardButton(TiXmlElement *pButton)
 uint32_t CButtonTranslator::TranslateAppCommand(const char *szButton)
 {
 #ifdef TARGET_WINDOWS
-  CStdString strAppCommand = szButton;
+  std::string strAppCommand = szButton;
   StringUtils::ToLower(strAppCommand);
 
-  for (int i = 0; i < sizeof(appcommands)/sizeof(appcommands[0]); i++)
-    if (strAppCommand.Equals(appcommands[i].name))
+  for (int i = 0; i < ARRAY_SIZE(appcommands); i++)
+    if (strAppCommand == appcommands[i].name)
       return appcommands[i].action | KEY_APPCOMMAND;
 
   CLog::Log(LOGERROR, "%s: Can't find appcommand %s", __FUNCTION__, szButton);
@@ -1439,18 +1655,40 @@ uint32_t CButtonTranslator::TranslateAppCommand(const char *szButton)
   return 0;
 }
 
-uint32_t CButtonTranslator::TranslateMouseCommand(const char *szButton)
+uint32_t CButtonTranslator::TranslateMouseCommand(TiXmlElement *pButton)
 {
-  CStdString strMouseCommand = szButton;
-  StringUtils::ToLower(strMouseCommand);
+  uint32_t buttonId = 0;
 
-  for (unsigned int i = 0; i < sizeof(mousecommands)/sizeof(mousecommands[0]); i++)
-    if (strMouseCommand.Equals(mousecommands[i].name))
-      return mousecommands[i].action | KEY_MOUSE;
+  if (pButton)
+  {
+    std::string szKey = pButton->ValueStr();
+    if (!szKey.empty())
+    {
+      StringUtils::ToLower(szKey);
+      for (unsigned int i = 0; i < ARRAY_SIZE(mousekeys); i++)
+      {
+        if (szKey == mousekeys[i].name)
+        {
+          buttonId = mousekeys[i].action;
+          break;
+        }
+      }
+      if (!buttonId)
+      {
+        CLog::Log(LOGERROR, "Unknown mouse action (%s), skipping", pButton->Value());
+      }
+      else
+      {
+        int id = 0;
+        if ((pButton->QueryIntAttribute("id", &id) == TIXML_SUCCESS) && id>=0 && id<MOUSE_MAX_BUTTON)
+        {
+          buttonId += id;
+        }
+      }
+    }
+  }
 
-  CLog::Log(LOGERROR, "%s: Can't find mouse command %s", __FUNCTION__, szButton);
-
-  return 0;
+  return buttonId;
 }
 
 void CButtonTranslator::Clear()
@@ -1480,7 +1718,7 @@ uint32_t CButtonTranslator::TranslateTouchCommand(TiXmlElement *pButton, CButton
   if (szAction == NULL)
     return ACTION_NONE;
 
-  CStdString strTouchCommand = szButton;
+  std::string strTouchCommand = szButton;
   StringUtils::ToLower(strTouchCommand);
 
   const char *attrVal = pButton->Attribute("direction");
@@ -1488,9 +1726,9 @@ uint32_t CButtonTranslator::TranslateTouchCommand(TiXmlElement *pButton, CButton
     strTouchCommand += attrVal;
 
   uint32_t actionId = ACTION_NONE;
-  for (unsigned int i = 0; i < sizeof(touchcommands)/sizeof(touchcommands[0]); i++)
+  for (unsigned int i = 0; i < ARRAY_SIZE(touchcommands); i++)
   {
-    if (strTouchCommand.Equals(touchcommands[i].name))
+    if (strTouchCommand == touchcommands[i].name)
     {
       actionId = touchcommands[i].action;
       break;
@@ -1563,7 +1801,7 @@ void CButtonTranslator::MapTouchActions(int windowID, TiXmlNode *pTouch)
     m_touchMap.insert(std::pair<int, buttonMap>(windowID, map));
 }
 
-int CButtonTranslator::GetTouchActionCode(int window, int action)
+int CButtonTranslator::GetTouchActionCode(int window, int action, std::string &actionString)
 {
   std::map<int, buttonMap>::const_iterator windowIt = m_touchMap.find(window);
   if (windowIt == m_touchMap.end())
@@ -1573,5 +1811,6 @@ int CButtonTranslator::GetTouchActionCode(int window, int action)
   if (touchIt == windowIt->second.end())
     return ACTION_NONE;
 
+  actionString = touchIt->second.strID;
   return touchIt->second.id;
 }

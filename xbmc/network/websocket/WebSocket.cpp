@@ -26,7 +26,6 @@
 #include "utils/log.h"
 #include "utils/HttpParser.h"
 #include "utils/Base64.h"
-#include "utils/StdString.h"
 #include "utils/StringUtils.h"
 #include "utils/HttpResponse.h"
 
@@ -42,8 +41,6 @@
 #define CONTROL_FRAME 0x08
 
 #define LENGTH_MIN    0x2
-
-using namespace std;
 
 CWebSocketFrame::CWebSocketFrame(const char* data, uint64_t length)
 {
@@ -161,7 +158,7 @@ CWebSocketFrame::CWebSocketFrame(WebSocketFrameOpcode opcode, const char* data /
   m_final = final;
   m_extension = extension;
 
-  string buffer;
+  std::string buffer;
   char dataByte = 0;
 
   // Set the FIN flag

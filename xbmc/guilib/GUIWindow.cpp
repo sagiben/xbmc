@@ -21,14 +21,10 @@
 #include "system.h"
 #include "GUIWindow.h"
 #include "GUIWindowManager.h"
-#include "Key.h"
-#include "LocalizeStrings.h"
+#include "input/Key.h"
 #include "GUIControlFactory.h"
 #include "GUIControlGroup.h"
 #include "GUIControlProfiler.h"
-#ifdef PRE_SKIN_VERSION_9_10_COMPATIBILITY
-#include "GUIEditControl.h"
-#endif
 
 #include "addons/Skin.h"
 #include "GUIInfoManager.h"
@@ -39,7 +35,7 @@
 #include "utils/XMLUtils.h"
 #include "GUIAudioManager.h"
 #include "Application.h"
-#include "ApplicationMessenger.h"
+#include "messaging/ApplicationMessenger.h"
 #include "utils/Variant.h"
 #include "utils/StringUtils.h"
 
@@ -47,26 +43,25 @@
 #include "utils/PerformanceSample.h"
 #endif
 
-using namespace std;
+using namespace KODI::MESSAGING;
 
-bool CGUIWindow::icompare::operator()(const CStdString &s1, const CStdString &s2) const
+bool CGUIWindow::icompare::operator()(const std::string &s1, const std::string &s2) const
 {
   return StringUtils::CompareNoCase(s1, s2) < 0;
 }
 
-CGUIWindow::CGUIWindow(int id, const CStdString &xmlFile)
+CGUIWindow::CGUIWindow(int id, const std::string &xmlFile)
 {
   SetID(id);
   SetProperty("xmlfile", xmlFile);
   m_lastControlID = 0;
-  m_overlayState = OVERLAY_STATE_PARENT_WINDOW;   // Use parent or previous window's state
   m_isDialog = false;
   m_needsScaling = true;
   m_windowLoaded = false;
   m_loadType = LOAD_EVERY_TIME;
   m_closing = false;
   m_active = false;
-  m_renderOrder = 0;
+  m_renderOrder = RENDER_ORDER_WINDOW;
   m_dynamicResourceAlloc = true;
   m_previousWindow = WINDOW_INVALID;
   m_animationsEnabled = true;
@@ -74,6 +69,8 @@ CGUIWindow::CGUIWindow(int id, const CStdString &xmlFile)
   m_exclusiveMouseControl = 0;
   m_clearBackground = 0xff000000; // opaque black -> always clear
   m_windowXMLRootElement = NULL;
+  m_menuControlID = 0;
+  m_menuLastFocusedControlID = 0;
 }
 
 CGUIWindow::~CGUIWindow(void)
@@ -81,7 +78,7 @@ CGUIWindow::~CGUIWindow(void)
   delete m_windowXMLRootElement;
 }
 
-bool CGUIWindow::Load(const CStdString& strFileName, bool bContainsPath)
+bool CGUIWindow::Load(const std::string& strFileName, bool bContainsPath)
 {
 #ifdef HAS_PERFORMANCE_SAMPLE
   CPerformanceSample aSample("WindowLoad-" + strFileName, true);
@@ -111,8 +108,8 @@ bool CGUIWindow::Load(const CStdString& strFileName, bool bContainsPath)
   CLog::Log(LOGINFO, "Loading skin file: %s, load type: %s", strFileName.c_str(), strLoadType);
   
   // Find appropriate skin folder + resolution to load from
-  CStdString strPath;
-  CStdString strLowerPath;
+  std::string strPath;
+  std::string strLowerPath;
   if (bContainsPath)
     strPath = strFileName;
   else
@@ -135,7 +132,7 @@ bool CGUIWindow::Load(const CStdString& strFileName, bool bContainsPath)
   return ret;
 }
 
-bool CGUIWindow::LoadXML(const CStdString &strPath, const CStdString &strLowerPath)
+bool CGUIWindow::LoadXML(const std::string &strPath, const std::string &strLowerPath)
 {
   // load window xml if we don't have it stored yet
   if (!m_windowXMLRootElement)
@@ -189,7 +186,7 @@ bool CGUIWindow::Load(TiXmlElement* pRootElement)
   TiXmlElement *pChild = pRootElement->FirstChildElement();
   while (pChild)
   {
-    CStdString strValue = pChild->Value();
+    std::string strValue = pChild->Value();
     if (strValue == "type" && pChild->FirstChild())
     {
       // if we have are a window type (ie not a dialog), and we have <type>dialog</type>
@@ -208,9 +205,13 @@ bool CGUIWindow::Load(TiXmlElement* pRootElement)
         m_defaultAlways = true;
       m_defaultControl = atoi(pChild->FirstChild()->Value());
     }
+    else if(strValue == "menucontrol" && pChild->FirstChild())
+    {
+      m_menuControlID = atoi(pChild->FirstChild()->Value());
+    }
     else if (strValue == "visible" && pChild->FirstChild())
     {
-      CStdString condition;
+      std::string condition;
       CGUIControlFactory::GetConditionalVisibility(pRootElement, condition);
       m_visibleCondition = g_infoManager.Register(condition, GetID());
     }
@@ -250,6 +251,11 @@ bool CGUIWindow::Load(TiXmlElement* pRootElement)
       pChild->QueryFloatAttribute("y", &m_camera.y);
       m_hasCamera = true;
     }
+    else if (strValue == "depth" && pChild->FirstChild())
+    { 
+      float stereo = (float)atof(pChild->FirstChild()->Value());;
+      m_stereo = std::max(-1.f, std::min(1.f, stereo));
+    }
     else if (strValue == "controls")
     {
       TiXmlElement *pControl = pChild->FirstChildElement();
@@ -261,12 +267,6 @@ bool CGUIWindow::Load(TiXmlElement* pRootElement)
         }
         pControl = pControl->NextSiblingElement();
       }
-    }
-    else if (strValue == "allowoverlay")
-    {
-      bool overlay = false;
-      if (XMLUtils::GetBoolean(pRootElement, "allowoverlay", overlay))
-        m_overlayState = overlay ? OVERLAY_STATE_SHOWN : OVERLAY_STATE_HIDDEN;
     }
 
     pChild = pChild->NextSiblingElement();
@@ -405,7 +405,11 @@ void CGUIWindow::Close(bool forceClose /*= false*/, int nextWindowID /*= 0*/, bo
   {
     // make sure graphics lock is not held
     CSingleExit leaveIt(g_graphicsContext);
-    CApplicationMessenger::Get().Close(this, forceClose, bWait, nextWindowID, enableSound);
+    int param2 = (forceClose ? 0x01 : 0) | (enableSound ? 0x02 : 0);
+    if (bWait)
+      CApplicationMessenger::GetInstance().SendMsg(TMSG_GUI_WINDOW_CLOSE, nextWindowID, param2, static_cast<void*>(this));
+    else
+      CApplicationMessenger::GetInstance().PostMsg(TMSG_GUI_WINDOW_CLOSE, nextWindowID, param2, static_cast<void*>(this));
   }
   else
     Close_Internal(forceClose, nextWindowID, enableSound);
@@ -431,8 +435,41 @@ bool CGUIWindow::OnAction(const CAction &action)
   }
 
   // default implementations
-  if (action.GetID() == ACTION_NAV_BACK || action.GetID() == ACTION_PREVIOUS_MENU)
-    return OnBack(action.GetID());
+  switch(action.GetID())
+  {
+    case ACTION_NAV_BACK:
+    case ACTION_PREVIOUS_MENU:
+      return OnBack(action.GetID());
+    case ACTION_SHOW_INFO:
+      return OnInfo(action.GetID());
+    case ACTION_MENU:
+      if (m_menuControlID > 0)
+      {
+        CGUIControl *menu = GetControl(m_menuControlID);
+        if (menu)
+        {
+          int focusControlId;
+          if (!menu->HasFocus())
+          {
+            // focus the menu control
+            focusControlId = m_menuControlID;
+            // To support a toggle behaviour we store the last focused control id
+            // to restore (focus) this control if the menu control has the focus
+            // while you press the menu button again.
+            m_menuLastFocusedControlID = GetFocusedControlID();
+          }
+          else
+          {
+            // restore the last focused control or if not exists use the default control
+            focusControlId = m_menuLastFocusedControlID > 0 ? m_menuLastFocusedControlID : m_defaultControl;
+          }
+
+          CGUIMessage msg = CGUIMessage(GUI_MSG_SETFOCUS, GetID(), focusControlId);
+          return OnMessage(msg);
+        }
+      }
+      break;
+  }
 
   return false;
 }
@@ -461,7 +498,7 @@ EVENT_RESULT CGUIWindow::OnMouseAction(const CAction &action)
   CMouseEvent event(action.GetID(), action.GetHoldTime(), action.GetAmount(2), action.GetAmount(3));
   if (m_exclusiveMouseControl)
   {
-    CGUIControl *child = (CGUIControl *)GetControl(m_exclusiveMouseControl);
+    CGUIControl *child = GetControl(m_exclusiveMouseControl);
     if (child)
     {
       CPoint renderPos = child->GetRenderPosition() - CPoint(child->GetXPosition(), child->GetYPosition());
@@ -513,7 +550,6 @@ void CGUIWindow::OnInitWindow()
   RestoreControlStates();
   SetInitialVisibility();
   QueueAnimation(ANIM_TYPE_WINDOW_OPEN);
-  g_windowManager.ShowOverlay(m_overlayState);
 
   if (!m_manualRunActions)
   {
@@ -641,7 +677,7 @@ bool CGUIWindow::OnMessage(CGUIMessage& message)
 
         // get the control to focus
         CGUIControl* pFocusedControl = GetFirstFocusableControl(message.GetControlId());
-        if (!pFocusedControl) pFocusedControl = (CGUIControl *)GetControl(message.GetControlId());
+        if (!pFocusedControl) pFocusedControl = GetControl(message.GetControlId());
 
         // and focus it
         if (pFocusedControl)
@@ -660,7 +696,8 @@ bool CGUIWindow::OnMessage(CGUIMessage& message)
     {
       CAction action(ACTION_GESTURE_NOTIFY, 0, (float)message.GetParam1(), (float)message.GetParam2(), 0, 0);
       EVENT_RESULT result = OnMouseAction(action);
-      message.SetParam1(result);
+      auto res = new int(result);
+      message.SetPointer(static_cast<void*>(res));
       return result != EVENT_RESULT_UNHANDLED;
     }
   case GUI_MSG_ADD_CONTROL:
@@ -731,7 +768,7 @@ void CGUIWindow::AllocResources(bool forceLoad /*= FALSE */)
 
   if (forceLoad)
   {
-    CStdString xmlFile = GetProperty("xmlfile").asString();
+    std::string xmlFile = GetProperty("xmlfile").asString();
     if (xmlFile.size())
     {
       bool bHasPath = xmlFile.find("\\") != std::string::npos || xmlFile.find("/") != std::string::npos;
@@ -754,7 +791,7 @@ void CGUIWindow::AllocResources(bool forceLoad /*= FALSE */)
   else
   {
     CLog::Log(LOGDEBUG,"Window %s was already loaded", GetProperty("xmlfile").c_str());
-    CLog::Log(LOGDEBUG,"Alloc resources: %.2fm", 1000.f * (end - start) / freq);
+    CLog::Log(LOGDEBUG,"Alloc resources: %.2fms", 1000.f * (end - start) / freq);
   }
 #endif
   m_bAllocated = true;
@@ -803,7 +840,7 @@ bool CGUIWindow::Initialize()
     // if not app thread, send gui msg via app messenger
     // and wait for results, so windowLoaded flag would be updated
     CGUIMessage msg(GUI_MSG_WINDOW_LOAD, 0, 0);
-    CApplicationMessenger::Get().SendGUIMessage(msg, GetID(), true);
+    CApplicationMessenger::GetInstance().SendGUIMessage(msg, GetID(), true);
   }
   return m_windowLoaded;
 }
@@ -866,7 +903,7 @@ bool CGUIWindow::ControlGroupHasFocus(int groupID, int controlID)
   // 1.  Run through and get control with groupID (assume unique)
   // 2.  Get it's selected item.
   CGUIControl *group = GetFirstFocusableControl(groupID);
-  if (!group) group = (CGUIControl *)GetControl(groupID);
+  if (!group) group = GetControl(groupID);
 
   if (group && group->IsGroup())
   {
@@ -895,7 +932,7 @@ void CGUIWindow::SaveControlStates()
 
 void CGUIWindow::RestoreControlStates()
 {
-  for (vector<CControlState>::iterator it = m_controlStates.begin(); it != m_controlStates.end(); ++it)
+  for (std::vector<CControlState>::iterator it = m_controlStates.begin(); it != m_controlStates.end(); ++it)
   {
     CGUIMessage message(GUI_MSG_ITEM_SELECT, GetID(), (*it).m_id, (*it).m_data);
     OnMessage(message);
@@ -927,14 +964,12 @@ bool CGUIWindow::OnMove(int fromControl, int moveAction)
               fromControl, GetID());
     return false;
   }
-  vector<int> moveHistory;
+  std::vector<int> moveHistory;
   int nextControl = fromControl;
   while (control)
   { // grab the next control direction
     moveHistory.push_back(nextControl);
-    CGUIAction action;
-    if (!control->GetNavigationAction(moveAction, action))
-      return false;
+    CGUIAction action = control->GetAction(moveAction);
     action.ExecuteActions(nextControl, GetParentID());
     nextControl = action.GetNavigation();
     if (!nextControl) // 0 isn't valid control id
@@ -959,18 +994,20 @@ bool CGUIWindow::OnMove(int fromControl, int moveAction)
 
 void CGUIWindow::SetDefaults()
 {
-  m_renderOrder = 0;
+  m_renderOrder = RENDER_ORDER_WINDOW;
   m_defaultAlways = false;
   m_defaultControl = 0;
   m_posX = m_posY = m_width = m_height = 0;
-  m_overlayState = OVERLAY_STATE_PARENT_WINDOW;   // Use parent or previous window's state
   m_previousWindow = WINDOW_INVALID;
   m_animations.clear();
   m_origins.clear();
   m_hasCamera = false;
+  m_stereo = 0.f;
   m_animationsEnabled = true;
   m_clearBackground = 0xff000000; // opaque black -> clear
   m_hitRect.SetRect(0, 0, (float)m_coordsRes.iWidth, (float)m_coordsRes.iHeight);
+  m_menuControlID = 0;
+  m_menuLastFocusedControlID = 0;
 }
 
 CRect CGUIWindow::GetScaledBounds() const
@@ -985,7 +1022,7 @@ CRect CGUIWindow::GetScaledBounds() const
   return rect;
 }
 
-void CGUIWindow::OnEditChanged(int id, CStdString &text)
+void CGUIWindow::OnEditChanged(int id, std::string &text)
 {
   CGUIMessage msg(GUI_MSG_ITEM_SELECTED, GetID(), id);
   OnMessage(msg);
@@ -1006,36 +1043,16 @@ void CGUIWindow::DumpTextureUse()
 #endif
 }
 
-void CGUIWindow::ChangeButtonToEdit(int id, bool singleLabel /* = false*/)
-{
-#ifdef PRE_SKIN_VERSION_9_10_COMPATIBILITY
-  CGUIControl *name = (CGUIControl *)GetControl(id);
-  if (name && name->GetControlType() == CGUIControl::GUICONTROL_BUTTON)
-  { // change it to an edit control
-    CGUIEditControl *edit = new CGUIEditControl(*(const CGUIButtonControl *)name);
-    if (edit)
-    {
-      if (singleLabel)
-        edit->SetLabel("");
-      InsertControl(edit, name);
-      RemoveControl(name);
-      name->FreeResources();
-      delete name;
-    }
-  }
-#endif
-}
-
-void CGUIWindow::SetProperty(const CStdString &strKey, const CVariant &value)
+void CGUIWindow::SetProperty(const std::string &strKey, const CVariant &value)
 {
   CSingleLock lock(*this);
   m_mapProperties[strKey] = value;
 }
 
-CVariant CGUIWindow::GetProperty(const CStdString &strKey) const
+CVariant CGUIWindow::GetProperty(const std::string &strKey) const
 {
   CSingleLock lock(*this);
-  std::map<CStdString, CVariant, icompare>::const_iterator iter = m_mapProperties.find(strKey);
+  std::map<std::string, CVariant, icompare>::const_iterator iter = m_mapProperties.find(strKey);
   if (iter == m_mapProperties.end())
     return CVariant(CVariant::VariantTypeNull);
 

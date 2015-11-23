@@ -18,8 +18,6 @@
  *
  */
 
-#include "system.h"
-
 #include "OverlayRendererGUI.h"
 #include "settings/Settings.h"
 
@@ -32,8 +30,6 @@
 #include "guilib/GUIFontManager.h"
 #include "guilib/GUIFont.h"
 #include "cores/dvdplayer/DVDCodecs/Overlay/DVDOverlayText.h"
-#include "cores/VideoRenderers/RenderManager.h"
-#include "cores/VideoRenderers/OverlayRendererUtil.h"
 
 using namespace OVERLAY;
 
@@ -49,7 +45,7 @@ static color_t color[8] = { 0xFFFFFF00
 static CGUITextLayout* GetFontLayout()
 {
   if (CUtil::IsUsingTTFSubtitles())
-  { std::string font_file = CSettings::Get().GetString("subtitles.font");
+  { std::string font_file = CSettings::GetInstance().GetString(CSettings::SETTING_SUBTITLES_FONT);
     std::string font_path = URIUtils::AddFileToFolder("special://home/media/Fonts/", font_file);
     if (!XFILE::CFile::Exists(font_path))
       font_path = URIUtils::AddFileToFolder("special://xbmc/media/Fonts/", font_file);
@@ -58,17 +54,17 @@ static CGUITextLayout* GetFontLayout()
     RESOLUTION_INFO pal(720, 576, 0);
     CGUIFont *subtitle_font = g_fontManager.LoadTTF("__subtitle__"
                                                     , font_path
-                                                    , color[CSettings::Get().GetInt("subtitles.color")]
+                                                    , color[CSettings::GetInstance().GetInt(CSettings::SETTING_SUBTITLES_COLOR)]
                                                     , 0
-                                                    , CSettings::Get().GetInt("subtitles.height")
-                                                    , CSettings::Get().GetInt("subtitles.style")
+                                                    , CSettings::GetInstance().GetInt(CSettings::SETTING_SUBTITLES_HEIGHT)
+                                                    , CSettings::GetInstance().GetInt(CSettings::SETTING_SUBTITLES_STYLE)
                                                     , false, 1.0f, 1.0f, &pal, true);
     CGUIFont *border_font   = g_fontManager.LoadTTF("__subtitleborder__"
                                                     , font_path
                                                     , 0xFF000000
                                                     , 0
-                                                    , CSettings::Get().GetInt("subtitles.height")
-                                                    , CSettings::Get().GetInt("subtitles.style")
+                                                    , CSettings::GetInstance().GetInt(CSettings::SETTING_SUBTITLES_HEIGHT)
+                                                    , CSettings::GetInstance().GetInt(CSettings::SETTING_SUBTITLES_STYLE)
                                                     , true, 1.0f, 1.0f, &pal, true);
     if (!subtitle_font || !border_font)
       CLog::Log(LOGERROR, "CGUIWindowFullScreen::OnMessage(WINDOW_INIT) - Unable to load subtitle font");
@@ -87,7 +83,7 @@ COverlayText::COverlayText(CDVDOverlayText * src)
     if (e->IsElementType(CDVDOverlayText::ELEMENT_TYPE_TEXT))
     {
       CDVDOverlayText::CElementText* t = (CDVDOverlayText::CElementText*)e;
-      m_text += t->m_text;
+      m_text += t->GetText();
       m_text += "\n";
     }
     e = e->pNext;
@@ -119,7 +115,7 @@ COverlayText::COverlayText(CDVDOverlayText * src)
 
   m_layout = GetFontLayout();
 
-  m_subalign = CSettings::Get().GetInt("subtitles.align");
+  m_subalign = CSettings::GetInstance().GetInt(CSettings::SETTING_SUBTITLES_ALIGN);
   if (m_subalign == SUBTITLE_ALIGN_MANUAL)
   {
     m_align  = ALIGN_SUBTITLE;
@@ -129,22 +125,38 @@ COverlayText::COverlayText(CDVDOverlayText * src)
   }
   else
   {
-    m_align  = ALIGN_VIDEO;
+    if(m_subalign == SUBTITLE_ALIGN_TOP_INSIDE ||
+       m_subalign == SUBTITLE_ALIGN_BOTTOM_INSIDE)
+      m_align  = ALIGN_VIDEO;
+    else
+      m_align = ALIGN_SCREEN;
+
     m_pos    = POSITION_RELATIVE;
     m_x      = 0.5f;
-    if(m_subalign == SUBTITLE_ALIGN_TOP_INSIDE
-    || m_subalign == SUBTITLE_ALIGN_TOP_OUTSIDE)
+
+    if(m_subalign == SUBTITLE_ALIGN_TOP_INSIDE ||
+       m_subalign == SUBTITLE_ALIGN_TOP_OUTSIDE)
       m_y    = 0.0f;
     else
       m_y    = 1.0f;
   }
   m_width  = 0;
   m_height = 0;
+
+  m_type = TYPE_GUITEXT;
 }
 
 COverlayText::~COverlayText()
 {
   delete m_layout;
+}
+
+void COverlayText::PrepareRender()
+{
+  RESOLUTION_INFO res = g_graphicsContext.GetResInfo();
+  float width_max = (float)res.Overscan.right - res.Overscan.left;
+  m_layout->Update(m_text, width_max * 0.9f, false, true); // true to force LTR reading order (most Hebrew subs are this format)
+  m_layout->GetTextExtent(m_width, m_height);
 }
 
 void COverlayText::Render(OVERLAY::SRenderState &state)
@@ -166,24 +178,22 @@ void COverlayText::Render(OVERLAY::SRenderState &state)
   mat.m[0][3] = rd.x1;
   mat.m[1][3] = rd.y1;
 
-  float x = state.x, y = state.y;
+  float x = state.x;
+  float y = state.y;
   mat.InverseTransformPosition(x, y);
 
   g_graphicsContext.SetTransform(mat, 1.0f, 1.0f);
 
   float width_max = (float) res.Overscan.right - res.Overscan.left;
-  float width, height;
-  m_layout->Update(m_text, width_max * 0.9f, false, true); // true to force LTR reading order (most Hebrew subs are this format)
-  m_layout->GetTextExtent(width, height);
 
   if (m_subalign == SUBTITLE_ALIGN_MANUAL
-  ||  m_subalign == SUBTITLE_ALIGN_TOP_OUTSIDE
+  ||  m_subalign == SUBTITLE_ALIGN_BOTTOM_OUTSIDE
   ||  m_subalign == SUBTITLE_ALIGN_BOTTOM_INSIDE)
-    y -= height;
+    y -= m_height;
 
   // clamp inside screen
   y = std::max(y, (float) res.Overscan.top);
-  y = std::min(y, res.Overscan.bottom - height);
+  y = std::min(y, res.Overscan.bottom - m_height);
 
   m_layout->RenderOutline(x, y, 0, 0xFF000000, XBFONT_CENTER_X, width_max);
   g_graphicsContext.RemoveTransform();

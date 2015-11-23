@@ -27,16 +27,13 @@
 #include "utils/URIUtils.h"
 #include "utils/StringUtils.h"
 #include "threads/SingleLock.h"
-#include "threads/Atomics.h"
 #include "guilib/GraphicContext.h"
-
-using namespace std;
 
 static void libass_log(int level, const char *fmt, va_list args, void *data)
 {
   if(level >= 5)
     return;
-  CStdString log = StringUtils::FormatV(fmt, args);
+  std::string log = StringUtils::FormatV(fmt, args);
   CLog::Log(LOGDEBUG, "CDVDSubtitlesLibass: [ass] %s", log.c_str());
 }
 
@@ -55,7 +52,7 @@ CDVDSubtitlesLibass::CDVDSubtitlesLibass()
   }
 
   //Setting the font directory to the temp dir(where mkv fonts are extracted to)
-  CStdString strPath = "special://temp/fonts/";
+  std::string strPath = "special://temp/fonts/";
 
   CLog::Log(LOGINFO, "CDVDSubtitlesLibass: Creating ASS library structure");
   m_library  = m_dll.ass_library_init();
@@ -79,10 +76,10 @@ CDVDSubtitlesLibass::CDVDSubtitlesLibass()
     return;
 
   //Setting default font to the Arial in \media\fonts (used if FontConfig fails)
-  strPath = URIUtils::AddFileToFolder("special://home/media/Fonts/", CSettings::Get().GetString("subtitles.font"));
+  strPath = URIUtils::AddFileToFolder("special://home/media/Fonts/", CSettings::GetInstance().GetString(CSettings::SETTING_SUBTITLES_FONT));
   if (!XFILE::CFile::Exists(strPath))
-    strPath = URIUtils::AddFileToFolder("special://xbmc/media/Fonts/", CSettings::Get().GetString("subtitles.font"));
-  int fc = !CSettings::Get().GetBool("subtitles.overrideassfonts");
+    strPath = URIUtils::AddFileToFolder("special://xbmc/media/Fonts/", CSettings::GetInstance().GetString(CSettings::SETTING_SUBTITLES_FONT));
+  int fc = !CSettings::GetInstance().GetBool(CSettings::SETTING_SUBTITLES_OVERRIDEASSFONTS);
 
   m_dll.ass_set_margins(m_renderer, 0, 0, 0, 0);
   m_dll.ass_set_use_margins(m_renderer, 0);
@@ -136,7 +133,7 @@ bool CDVDSubtitlesLibass::DecodeDemuxPkt(char* data, int size, double start, dou
   return true;
 }
 
-bool CDVDSubtitlesLibass::CreateTrack(char* buf, int size)
+bool CDVDSubtitlesLibass::CreateTrack(char* buf, size_t size)
 {
   CSingleLock lock(m_section);
   if(!m_library)
@@ -154,7 +151,7 @@ bool CDVDSubtitlesLibass::CreateTrack(char* buf, int size)
   return true;
 }
 
-ASS_Image* CDVDSubtitlesLibass::RenderImage(int imageWidth, int imageHeight, double pts, int *changes)
+ASS_Image* CDVDSubtitlesLibass::RenderImage(int frameWidth, int frameHeight, int videoWidth, int videoHeight, double pts, int useMargin, double position, int *changes)
 {
   CSingleLock lock(m_section);
   if(!m_renderer || !m_track)
@@ -163,8 +160,13 @@ ASS_Image* CDVDSubtitlesLibass::RenderImage(int imageWidth, int imageHeight, dou
     return NULL;
   }
 
-  double storage_aspact = (double)imageWidth / imageHeight;
-  m_dll.ass_set_frame_size(m_renderer, imageWidth, imageHeight);
+  double storage_aspact = (double)frameWidth / frameHeight;
+  m_dll.ass_set_frame_size(m_renderer, frameWidth, frameHeight);
+  int topmargin = (frameHeight - videoHeight) / 2;
+  int leftmargin = (frameWidth - videoWidth) / 2;
+  m_dll.ass_set_margins(m_renderer, topmargin, topmargin, leftmargin, leftmargin);
+  m_dll.ass_set_use_margins(m_renderer, useMargin);
+  m_dll.ass_set_line_position(m_renderer, position);
   m_dll.ass_set_aspect_ratio(m_renderer, storage_aspact / g_graphicsContext.GetResInfo().fPixelRatio, storage_aspact);
   return m_dll.ass_render_frame(m_renderer, m_track, DVD_TIME_TO_MSEC(pts), changes);
 }

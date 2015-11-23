@@ -22,14 +22,12 @@
 #if defined(HAVE_LIBCEC)
 #include "PeripheralBusCEC.h"
 #include "peripherals/Peripherals.h"
-#include "utils/log.h"
 #include "DynamicDll.h"
 
 #include <libcec/cec.h>
 
 using namespace PERIPHERALS;
 using namespace CEC;
-using namespace std;
 
 class DllLibCECInterface
 {
@@ -101,6 +99,8 @@ bool CPeripheralBusCEC::PerformDeviceScan(PeripheralScanResults &results)
       break;
     case ADAPTERTYPE_RPI:
       result.m_mappedBusType = PERIPHERAL_BUS_RPI;
+      /** the Pi's adapter cannot be removed, no need to rescan */
+      m_bNeedsPolling = false;
       break;
     default:
       break;

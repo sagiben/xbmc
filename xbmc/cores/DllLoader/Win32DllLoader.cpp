@@ -18,13 +18,11 @@
  *
  */
 
-#include "stdio.h"
 #include "Win32DllLoader.h"
 #include "DllLoader.h"
 #include "DllLoaderContainer.h"
-#include "utils/StdString.h"
-#include "Util.h"
 #include "utils/log.h"
+#include "utils/StringUtils.h"
 #include "filesystem/SpecialProtocol.h"
 #include "utils/CharsetConverter.h"
 
@@ -32,6 +30,8 @@
 #include "dll_tracker_file.h"
 #include "exports/emu_kernel32.h"
 #include "exports/emu_msvcrt.h"
+
+#include <limits>
 
 extern "C" FILE _iob[];
 extern "C" FARPROC WINAPI dllWin32GetProcAddress(HMODULE hModule, LPCSTR function);
@@ -89,6 +89,7 @@ Export win32_exports[] =
   { "feof",                       -1, (void*)dll_feof,                      NULL },
   { "fgets",                      -1, (void*)dll_fgets,                     NULL },
   { "fopen",                      -1, (void*)dll_fopen,                     (void*)track_fopen},
+  { "fopen_s",                    -1, (void*)dll_fopen_s,                   NULL },
   { "putc",                       -1, (void*)dll_putc,                      NULL },
   { "fputc",                      -1, (void*)dll_fputc,                     NULL },
   { "fputs",                      -1, (void*)dll_fputs,                     NULL },
@@ -135,7 +136,7 @@ Export win32_exports[] =
   { NULL,                          -1, NULL,                                NULL }
 };
 
-Win32DllLoader::Win32DllLoader(const char *dll) : LibraryLoader(dll)
+Win32DllLoader::Win32DllLoader(const std::string& dll) : LibraryLoader(dll)
 {
   m_dllHandle = NULL;
   bIsSystemDll = false;
@@ -154,9 +155,9 @@ bool Win32DllLoader::Load()
   if (m_dllHandle != NULL)
     return true;
 
-  CStdString strFileName = GetFileName();
+  std::string strFileName = GetFileName();
 
-  CStdStringW strDllW;
+  std::wstring strDllW;
   g_charsetConverter.utf8ToW(CSpecialProtocol::TranslatePath(strFileName), strDllW, false, false, false);
   m_dllHandle = LoadLibraryExW(strDllW.c_str(), NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
   if (!m_dllHandle)
@@ -240,15 +241,15 @@ bool Win32DllLoader::HasSymbols()
   return false;
 }
 
-void Win32DllLoader::OverrideImports(const CStdString &dll)
+void Win32DllLoader::OverrideImports(const std::string &dll)
 {
-  CStdStringW strdllW;
+  std::wstring strdllW;
   g_charsetConverter.utf8ToW(CSpecialProtocol::TranslatePath(dll), strdllW, false);
   BYTE* image_base = (BYTE*)GetModuleHandleW(strdllW.c_str());
 
   if (!image_base)
   {
-    CLog::Log(LOGERROR, "%s - unable to GetModuleHandle for dll %s", dll.c_str());
+    CLog::Log(LOGERROR, "%s - unable to GetModuleHandle for dll %s", __FUNCTION__, dll.c_str());
     return;
   }
 
@@ -260,7 +261,7 @@ void Win32DllLoader::OverrideImports(const CStdString &dll)
 
   if (!imp_desc)
   {
-    CLog::Log(LOGERROR, "%s - unable to get import directory for dll %s", dll.c_str());
+    CLog::Log(LOGERROR, "%s - unable to get import directory for dll %s", __FUNCTION__, dll.c_str());
     return;
   }
 
@@ -337,7 +338,7 @@ bool Win32DllLoader::NeedsHooking(const char *dllName)
         return false;
     }
   }
-  CStdStringW strdllNameW;
+  std::wstring strdllNameW;
   g_charsetConverter.utf8ToW(CSpecialProtocol::TranslatePath(dllName), strdllNameW, false);
   HMODULE hModule = GetModuleHandleW(strdllNameW.c_str());
   if (hModule == NULL)
@@ -345,16 +346,16 @@ bool Win32DllLoader::NeedsHooking(const char *dllName)
 
   wchar_t filepathW[MAX_PATH];
   GetModuleFileNameW(hModule, filepathW, MAX_PATH);
-  CStdString dllPath;
+  std::string dllPath;
   g_charsetConverter.wToUTF8(filepathW, dllPath);
 
   // compare this filepath with some special directories
-  CStdString xbmcPath = CSpecialProtocol::TranslatePath("special://xbmc");
-  CStdString homePath = CSpecialProtocol::TranslatePath("special://home");
-  CStdString tempPath = CSpecialProtocol::TranslatePath("special://temp");
-  return ((strncmp(xbmcPath.c_str(), dllPath.c_str(), xbmcPath.size()) == 0) ||
-    (strncmp(homePath.c_str(), dllPath.c_str(), homePath.size()) == 0) ||
-    (strncmp(tempPath.c_str(), dllPath.c_str(), tempPath.size()) == 0));
+  std::string xbmcPath = CSpecialProtocol::TranslatePath("special://xbmc");
+  std::string homePath = CSpecialProtocol::TranslatePath("special://home");
+  std::string tempPath = CSpecialProtocol::TranslatePath("special://temp");
+  return (StringUtils::StartsWith(dllPath, xbmcPath) ||
+          StringUtils::StartsWith(dllPath, homePath) ||
+          StringUtils::StartsWith(dllPath, tempPath));
 }
 
 void Win32DllLoader::RestoreImports()
@@ -425,10 +426,14 @@ bool Win32DllLoader::ResolveOrdinal(const char *dllName, unsigned long ordinal, 
 
 extern "C" FARPROC __stdcall dllWin32GetProcAddress(HMODULE hModule, LPCSTR function)
 {
-  // first check whether this function is one of the ones we need to wrap
-  void *fixup = NULL;
-  if (FunctionNeedsWrapping(win32_exports, function, &fixup))
-    return (FARPROC)fixup;
+  // if the high-order word is zero, then lpProcName is the function's ordinal value
+  if (reinterpret_cast<uintptr_t>(function) > std::numeric_limits<WORD>::max())
+  {
+    // first check whether this function is one of the ones we need to wrap
+    void *fixup = NULL;
+    if (FunctionNeedsWrapping(win32_exports, function, &fixup))
+      return (FARPROC)fixup;
+  }
 
   // Nope
   return GetProcAddress(hModule, function);

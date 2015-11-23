@@ -29,10 +29,17 @@
 #include "settings/AdvancedSettings.h"
 #include "settings/Settings.h"
 #include "settings/DisplaySettings.h"
+#include "guilib/DispResource.h"
+#include "threads/SingleLock.h"
+#ifdef HAS_IMXVPU
+// This has to go into another header file
+#include "cores/dvdplayer/DVDCodecs/Video/DVDVideoCodecIMX.h"
+#endif
 #include "utils/log.h"
 #include "EGLWrapper.h"
 #include "EGLQuirks.h"
 #include <vector>
+#include <float.h>
 ////////////////////////////////////////////////////////////////////////////////////////////
 CWinSystemEGL::CWinSystemEGL() : CWinSystemBase()
 {
@@ -148,6 +155,18 @@ bool CWinSystemEGL::CreateWindow(RESOLUTION_INFO &res)
   if(m_egl)
     m_egl->SetNativeResolution(res);
 
+  int quirks;
+  m_egl->GetQuirks(&quirks);
+  if (quirks & EGL_QUIRK_RECREATE_DISPLAY_ON_CREATE_WINDOW)
+  {
+    if (m_context != EGL_NO_CONTEXT)
+      if (!m_egl->InitDisplay(&m_display))
+      {
+        CLog::Log(LOGERROR, "%s: Could not reinit display",__FUNCTION__);
+        return false;
+      }
+  }
+
   if (!m_egl->CreateSurface(m_display, m_config, &m_surface))
   {
     CLog::Log(LOGNOTICE, "%s: Could not create a surface. Trying with a fresh Native Window.",__FUNCTION__);
@@ -207,6 +226,7 @@ bool CWinSystemEGL::CreateWindow(RESOLUTION_INFO &res)
     return false;
   }
 
+
   // for the non-trivial dirty region modes, we need the EGL buffer to be preserved across updates
   if (g_advancedSettings.m_guiAlgorithmDirtyRegions == DIRTYREGION_SOLVER_COST_REDUCTION ||
       g_advancedSettings.m_guiAlgorithmDirtyRegions == DIRTYREGION_SOLVER_UNION)
@@ -228,7 +248,9 @@ bool CWinSystemEGL::DestroyWindowSystem()
   DestroyWindow();
 
   if (m_context != EGL_NO_CONTEXT)
+  {
     m_egl->DestroyContext(m_display, m_context);
+  }
   m_context = EGL_NO_CONTEXT;
 
   if (m_display != EGL_NO_DISPLAY)
@@ -243,15 +265,16 @@ bool CWinSystemEGL::DestroyWindowSystem()
   delete m_egl;
   m_egl = NULL;
 
+  CWinSystemBase::DestroyWindowSystem();
   return true;
 }
 
-bool CWinSystemEGL::CreateNewWindow(const CStdString& name, bool fullScreen, RESOLUTION_INFO& res, PHANDLE_EVENT_FUNC userFunction)
+bool CWinSystemEGL::CreateNewWindow(const std::string& name, bool fullScreen, RESOLUTION_INFO& res, PHANDLE_EVENT_FUNC userFunction)
 {
   RESOLUTION_INFO current_resolution;
   current_resolution.iWidth = current_resolution.iHeight = 0;
 
-  m_nWidth        = res.iWidth;    
+  m_nWidth        = res.iWidth;
   m_nHeight       = res.iHeight;
   m_displayWidth  = res.iScreenWidth;
   m_displayHeight = res.iScreenHeight;
@@ -281,6 +304,11 @@ bool CWinSystemEGL::CreateNewWindow(const CStdString& name, bool fullScreen, RES
   }
   Show();
 
+  CSingleLock lock(m_resourceSection);
+  // tell any shared resources
+  for (std::vector<IDispResource *>::iterator i = m_resources.begin(); i != m_resources.end(); ++i)
+    (*i)->OnResetDevice();
+
   return true;
 }
 
@@ -306,7 +334,7 @@ bool CWinSystemEGL::DestroyWindow()
 bool CWinSystemEGL::ResizeWindow(int newWidth, int newHeight, int newLeft, int newTop)
 {
   CRenderSystemGLES::ResetRenderSystem(newWidth, newHeight, true, 0);
-  int vsync_mode = CSettings::Get().GetInt("videoscreen.vsync");
+  int vsync_mode = CSettings::GetInstance().GetInt(CSettings::SETTING_VIDEOSCREEN_VSYNC);
   if (vsync_mode != VSYNC_DRIVER)
     SetVSyncImpl(m_iVSyncMode);
   return true;
@@ -316,7 +344,7 @@ bool CWinSystemEGL::SetFullScreen(bool fullScreen, RESOLUTION_INFO& res, bool bl
 {
   CreateNewWindow("", fullScreen, res, NULL);
   CRenderSystemGLES::ResetRenderSystem(res.iWidth, res.iHeight, fullScreen, res.fRefreshRate);
-  int vsync_mode = CSettings::Get().GetInt("videoscreen.vsync");
+  int vsync_mode = CSettings::GetInstance().GetInt(CSettings::SETTING_VIDEOSCREEN_VSYNC);
   if (vsync_mode != VSYNC_DRIVER)
     SetVSyncImpl(m_iVSyncMode);
   return true;
@@ -359,14 +387,14 @@ void CWinSystemEGL::UpdateResolutions()
   {
     // if this is a new setting,
     // create a new empty setting to fill in.
-    if ((int)CDisplaySettings::Get().ResolutionInfoSize() <= res_index)
+    if ((int)CDisplaySettings::GetInstance().ResolutionInfoSize() <= res_index)
     {
       RESOLUTION_INFO res;
-      CDisplaySettings::Get().AddResolutionInfo(res);
+      CDisplaySettings::GetInstance().AddResolutionInfo(res);
     }
 
     g_graphicsContext.ResetOverscan(resolutions[i]);
-    CDisplaySettings::Get().GetResolutionInfo(res_index) = resolutions[i];
+    CDisplaySettings::GetInstance().GetResolutionInfo(res_index) = resolutions[i];
 
     CLog::Log(LOGNOTICE, "Found resolution %d x %d for display %d with %d x %d%s @ %f Hz\n",
       resolutions[i].iWidth,
@@ -382,7 +410,7 @@ void CWinSystemEGL::UpdateResolutions()
        resDesktop.iScreenWidth == resolutions[i].iScreenWidth &&
        resDesktop.iScreenHeight == resolutions[i].iScreenHeight &&
        (resDesktop.dwFlags & D3DPRESENTFLAG_MODEMASK) == (resolutions[i].dwFlags & D3DPRESENTFLAG_MODEMASK) &&
-       resDesktop.fRefreshRate == resolutions[i].fRefreshRate)
+       fabs(resDesktop.fRefreshRate - resolutions[i].fRefreshRate) < FLT_EPSILON)
     {
       ResDesktop = res_index;
     }
@@ -399,9 +427,9 @@ void CWinSystemEGL::UpdateResolutions()
       resDesktop.fRefreshRate,
       (int)ResDesktop, (int)RES_DESKTOP);
 
-    RESOLUTION_INFO desktop = CDisplaySettings::Get().GetResolutionInfo(RES_DESKTOP);
-    CDisplaySettings::Get().GetResolutionInfo(RES_DESKTOP) = CDisplaySettings::Get().GetResolutionInfo(ResDesktop);
-    CDisplaySettings::Get().GetResolutionInfo(ResDesktop) = desktop;
+    RESOLUTION_INFO desktop = CDisplaySettings::GetInstance().GetResolutionInfo(RES_DESKTOP);
+    CDisplaySettings::GetInstance().GetResolutionInfo(RES_DESKTOP) = CDisplaySettings::GetInstance().GetResolutionInfo(ResDesktop);
+    CDisplaySettings::GetInstance().GetResolutionInfo(ResDesktop) = desktop;
   }
 }
 
@@ -430,6 +458,9 @@ void CWinSystemEGL::SetVSyncImpl(bool enable)
     m_iVSyncMode = 0;
     CLog::Log(LOGERROR, "%s,Could not set egl vsync", __FUNCTION__);
   }
+#ifdef HAS_IMXVPU
+  g_IMXContext.SetVSync(enable);
+#endif
 }
 
 void CWinSystemEGL::ShowOSMouse(bool show)
@@ -471,6 +502,20 @@ bool CWinSystemEGL::Show(bool raise)
   return m_egl->ShowWindow(true);
 }
 
+void CWinSystemEGL::Register(IDispResource *resource)
+{
+  CSingleLock lock(m_resourceSection);
+  m_resources.push_back(resource);
+}
+
+void CWinSystemEGL::Unregister(IDispResource* resource)
+{
+  CSingleLock lock(m_resourceSection);
+  std::vector<IDispResource*>::iterator i = find(m_resources.begin(), m_resources.end(), resource);
+  if (i != m_resources.end())
+    m_resources.erase(i);
+}
+
 EGLDisplay CWinSystemEGL::GetEGLDisplay()
 {
   return m_display;
@@ -489,18 +534,18 @@ EGLConfig CWinSystemEGL::GetEGLConfig()
 // the logic in this function should match whether CBaseRenderer::FindClosestResolution picks a 3D mode
 bool CWinSystemEGL::Support3D(int width, int height, uint32_t mode) const
 {
-  RESOLUTION_INFO &curr = CDisplaySettings::Get().GetResolutionInfo(g_graphicsContext.GetVideoResolution());
+  RESOLUTION_INFO &curr = CDisplaySettings::GetInstance().GetResolutionInfo(g_graphicsContext.GetVideoResolution());
 
   // if we are using automatic hdmi mode switching
-  if (CSettings::Get().GetInt("videoplayer.adjustrefreshrate") != ADJUST_REFRESHRATE_OFF)
+  if (CSettings::GetInstance().GetInt(CSettings::SETTING_VIDEOPLAYER_ADJUSTREFRESHRATE) != ADJUST_REFRESHRATE_OFF)
   {
     int searchWidth = curr.iScreenWidth;
     int searchHeight = curr.iScreenHeight;
 
     // only search the custom resolutions
-    for (unsigned int i = (int)RES_DESKTOP; i < CDisplaySettings::Get().ResolutionInfoSize(); i++)
+    for (unsigned int i = (int)RES_DESKTOP; i < CDisplaySettings::GetInstance().ResolutionInfoSize(); i++)
     {
-      RESOLUTION_INFO res = CDisplaySettings::Get().GetResolutionInfo(i);
+      RESOLUTION_INFO res = CDisplaySettings::GetInstance().GetResolutionInfo(i);
       if(res.iScreenWidth == searchWidth && res.iScreenHeight == searchHeight && (res.dwFlags & mode))
         return true;
     }

@@ -59,7 +59,6 @@ private:
   DISPMANX_ELEMENT_HANDLE_T     m_dispman_element;
   TV_GET_STATE_RESP_T           m_tv_state;
   sem_t                         m_tv_synced;
-  bool                          m_fixedMode;
   RESOLUTION_INFO               m_desktopRes;
   int                           m_width;
   int                           m_height;
@@ -71,6 +70,6 @@ private:
 
   void DestroyDispmaxWindow();
   int FindMatchingResolution(const RESOLUTION_INFO &res, const std::vector<RESOLUTION_INFO> &resolutions);
-  int AddUniqueResolution(const RESOLUTION_INFO &res, std::vector<RESOLUTION_INFO> &resolutions);
+  int AddUniqueResolution(RESOLUTION_INFO &res, std::vector<RESOLUTION_INFO> &resolutions);
 #endif
 };

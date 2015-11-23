@@ -22,43 +22,81 @@
 /*
  * DESCRIPTION:
  *
- * CPVRRecordingInfoTag is part of the XBMC PVR system to support recording entrys,
+ * CPVRRecordingInfoTag is part of the Kodi PVR system to support recording entrys,
  * stored on a other Backend like VDR or MythTV.
  *
  * The recording information tag holds data about name, length, recording time
  * and so on of recorded stream stored on the backend.
  *
  * The filename string is used to by the PVRManager and passed to DVDPlayer
- * to stream data from the backend to XBMC.
+ * to stream data from the backend to Kodi.
  *
  * It is a also CVideoInfoTag and some of his variables must be set!
  *
  */
 
+#include "XBDateTime.h"
 #include "addons/include/xbmc_pvr_types.h"
 #include "video/VideoInfoTag.h"
-#include "XBDateTime.h"
+
+#define PVR_RECORDING_BASE_PATH     "recordings"
+#define PVR_RECORDING_DELETED_PATH  "deleted"
+#define PVR_RECORDING_ACTIVE_PATH   "active"
+
+class CVideoDatabase;
+class CVariant;
 
 namespace PVR
 {
+  class CPVRRecording;
+  typedef std::shared_ptr<PVR::CPVRRecording> CPVRRecordingPtr;
+
+  class CPVRChannel;
+  typedef std::shared_ptr<PVR::CPVRChannel> CPVRChannelPtr;
+
+  /*!
+   * @brief Representation of a CPVRRecording unique ID.
+   */
+  class CPVRRecordingUid
+  {
+  public:
+    int           m_iClientId;        /*!< ID of the backend */
+    std::string   m_strRecordingId;   /*!< unique ID of the recording on the client */
+
+    CPVRRecordingUid();
+    CPVRRecordingUid(const CPVRRecordingUid& recordingId);
+    CPVRRecordingUid(int iClientId, const std::string &strRecordingId);
+
+    bool operator >(const CPVRRecordingUid& right) const;
+    bool operator <(const CPVRRecordingUid& right) const;
+    bool operator ==(const CPVRRecordingUid& right) const;
+    bool operator !=(const CPVRRecordingUid& right) const;
+  };
+
   class CPVRRecording : public CVideoInfoTag
   {
   public:
     int           m_iClientId;        /*!< ID of the backend */
-    CStdString    m_strRecordingId;   /*!< unique id of the recording on the client */
-    CStdString    m_strChannelName;   /*!< name of the channel this was recorded from */
+    std::string   m_strRecordingId;   /*!< unique ID of the recording on the client */
+    std::string   m_strChannelName;   /*!< name of the channel this was recorded from */
     CDateTimeSpan m_duration;         /*!< duration of this recording */
     int           m_iPriority;        /*!< priority of this recording */
     int           m_iLifetime;        /*!< lifetime of this recording */
-    CStdString    m_strStreamURL;     /*!< stream URL. if empty use pvr client */
-    CStdString    m_strDirectory;     /*!< directory of this recording on the client */
-    CStdString    m_strIconPath;      /*!< icon path */
-    CStdString    m_strThumbnailPath; /*!< thumbnail path */
-    CStdString    m_strFanartPath;    /*!< fanart path */
+    std::string   m_strStreamURL;     /*!< stream URL. if empty use pvr client */
+    std::string   m_strDirectory;     /*!< directory of this recording on the client */
+    std::string   m_strIconPath;      /*!< icon path */
+    std::string   m_strThumbnailPath; /*!< thumbnail path */
+    std::string   m_strFanartPath;    /*!< fanart path */
     unsigned      m_iRecordingId;     /*!< id that won't change while xbmc is running */
 
     CPVRRecording(void);
     CPVRRecording(const PVR_RECORDING &recording, unsigned int iClientId);
+
+  private:
+    CPVRRecording(const CPVRRecording &tag); // intentionally not implemented.
+    CPVRRecording &operator =(const CPVRRecording &other); // intentionally not implemented.
+
+  public:
     virtual ~CPVRRecording() {};
 
     bool operator ==(const CPVRRecording& right) const;
@@ -84,11 +122,22 @@ namespace PVR
     bool Delete(void);
 
     /*!
+     * @brief Called when this recording has been deleted
+     */
+    void OnDelete(void);
+
+    /*!
+     * @brief Undelete this recording on the client (if supported).
+     * @return True if it was undeleted successfully, false otherwise.
+     */
+    bool Undelete(void);
+
+    /*!
      * @brief Rename this recording on the client (if supported).
      * @param strNewName The new name.
      * @return True if it was renamed successfully, false otherwise.
      */
-    bool Rename(const CStdString &strNewName);
+    bool Rename(const std::string &strNewName);
 
     /*!
      * @brief Set this recording's play count on the client (if supported).
@@ -123,10 +172,10 @@ namespace PVR
     std::vector<PVR_EDL_ENTRY> GetEdl() const;
 
     /*!
-     * @brief Get the resume point and play count from the database if the 
+     * @brief Get the resume point and play count from the database if the
      * client doesn't handle it itself.
      */
-    void UpdateMetadata(void);
+    void UpdateMetadata(CVideoDatabase &db);
 
     /*!
      * @brief Update this tag with the contents of the given tag.
@@ -144,7 +193,7 @@ namespace PVR
      * @param url the URL for the recording
      * @return Title of the recording
      */
-    static CStdString GetTitleFromURL(const CStdString &url);
+    static std::string GetTitleFromURL(const std::string &url);
 
     /*!
      * @brief Copy some information from the client to the given video info tag
@@ -152,9 +201,39 @@ namespace PVR
      */
     void CopyClientInfo(CVideoInfoTag *target) const;
 
+    /*!
+     * @brief If deleted but can be undeleted it is true
+     */
+    bool IsDeleted() const { return m_bIsDeleted; }
+
+    /*!
+     * @return Broadcast id of the EPG event associated with this recording
+     */
+    unsigned int EpgEvent(void) const { return m_iEpgEventId; }
+
+    /*!
+     * @return Get the channel on which this recording is/was running
+     * @note Only works if the recording has an EPG id provided by the add-on
+     */
+    CPVRChannelPtr Channel(void) const;
+
+    /*!
+     * @return True while the recording is running
+     * @note Only works if the recording has an EPG id provided by the add-on
+     */
+    bool IsBeingRecorded(void) const;
+
+    /*!
+     * @brief Retrieve the recording Episode Name
+     * @note Returns an empty string if no Episode Name was provided by the PVR client
+     */
+    std::string EpisodeName(void) const { return m_strShowTitle; };
+
   private:
-    CDateTime m_recordingTime; /*!< start time of the recording */
-    bool      m_bGotMetaData;
+    CDateTime    m_recordingTime; /*!< start time of the recording */
+    bool         m_bGotMetaData;
+    bool         m_bIsDeleted;    /*!< set if entry is a deleted recording which can be undelete */
+    unsigned int m_iEpgEventId;   /*!< epg broadcast id associated with this recording */
 
     void UpdatePath(void);
     void DisplayError(PVR_ERROR err) const;

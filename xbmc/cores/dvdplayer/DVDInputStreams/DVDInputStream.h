@@ -38,7 +38,6 @@ enum DVDStreamType
   DVDSTREAM_TYPE_FFMPEG = 5,
   DVDSTREAM_TYPE_TV     = 6,
   DVDSTREAM_TYPE_RTMP   = 7,
-  DVDSTREAM_TYPE_HTSP   = 8,
   DVDSTREAM_TYPE_MPLS   = 10,
   DVDSTREAM_TYPE_BLURAY = 11,
   DVDSTREAM_TYPE_PVRMANAGER = 12,
@@ -49,10 +48,15 @@ enum DVDStreamType
 #define DVDSTREAM_BLOCK_SIZE_FILE (2048 * 16)
 #define DVDSTREAM_BLOCK_SIZE_DVD  2048
 
+namespace XFILE
+{
+  class CFile;
+}
+
 namespace PVR
 {
   class CPVRChannel;
-  typedef boost::shared_ptr<PVR::CPVRChannel> CPVRChannelPtr;
+  typedef std::shared_ptr<PVR::CPVRChannel> CPVRChannelPtr;
 }
 
 class CDVDInputStream
@@ -65,8 +69,8 @@ public:
     virtual bool NextChannel(bool preview = false) = 0;
     virtual bool PrevChannel(bool preview = false) = 0;
     virtual bool SelectChannelByNumber(unsigned int channel) = 0;
-    virtual bool SelectChannel(const PVR::CPVRChannel &channel) { return false; };
-    virtual bool GetSelectedChannel(PVR::CPVRChannelPtr&) { return false; };
+    virtual bool SelectChannel(const PVR::CPVRChannelPtr &channel) { return false; };
+    virtual PVR::CPVRChannelPtr GetSelectedChannel() { return PVR::CPVRChannelPtr(); };
     virtual bool UpdateItem(CFileItem& item) = 0;
     virtual bool CanRecord() = 0;
     virtual bool IsRecording() = 0;
@@ -96,7 +100,8 @@ public:
     virtual ~IChapter() {};
     virtual int  GetChapter() = 0;
     virtual int  GetChapterCount() = 0;
-    virtual void GetChapterName(std::string& name) = 0;
+    virtual void GetChapterName(std::string& name, int ch=-1) = 0;
+    virtual int64_t GetChapterPos(int ch=-1) = 0;
     virtual bool SeekChapter(int ch) = 0;
   };
 
@@ -144,7 +149,7 @@ public:
 
   CDVDInputStream(DVDStreamType m_streamType);
   virtual ~CDVDInputStream();
-  virtual bool Open(const char* strFileName, const std::string& content);
+  virtual bool Open(const char* strFileName, const std::string& content, bool contentLookup);
   virtual void Close() = 0;
   virtual int Read(uint8_t* buf, int buf_size) = 0;
   virtual int64_t Seek(int64_t offset, int whence) = 0;
@@ -175,6 +180,8 @@ public:
 
   void SetFileItem(const CFileItem& item);
 
+  bool ContentLookup() { return m_contentLookup; }
+
 protected:
   DVDStreamType m_streamType;
   std::string m_strFileName;
@@ -182,4 +189,5 @@ protected:
   BitstreamStats m_stats;
   std::string m_content;
   CFileItem m_item;
+  bool m_contentLookup;
 };

@@ -26,6 +26,8 @@
 #include "WinSystemOSX.h"
 #include "WinEventsOSX.h"
 #include "Application.h"
+#include "messaging/ApplicationMessenger.h"
+#include "CompileInfo.h"
 #include "guilib/DispResource.h"
 #include "guilib/GUIWindowManager.h"
 #include "settings/DisplaySettings.h"
@@ -52,6 +54,8 @@
 
 // turn off deprecated warning spew.
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
+using namespace KODI::MESSAGING;
 
 //------------------------------------------------------------------------------------------
 // special object-c class for handling the inhibit display NSTimer callback.
@@ -538,7 +542,7 @@ static void DisplayReconfigured(CGDirectDisplayID display,
       return;
 
     NSScreen* pScreen = nil;
-    unsigned int screenIdx = CDisplaySettings::Get().GetResolutionInfo(res).iScreen;
+    unsigned int screenIdx = CDisplaySettings::GetInstance().GetResolutionInfo(res).iScreen;
 
     if ( screenIdx < [[NSScreen screens] count] )
     {
@@ -571,6 +575,9 @@ static void DisplayReconfigured(CGDirectDisplayID display,
       winsys->AnnounceOnResetDevice();
     }
   }
+  
+  if ((flags & kCGDisplayAddFlag) || (flags & kCGDisplayRemoveFlag))
+    winsys->UpdateResolutions();
 }
 
 //---------------------------------------------------------------------------------
@@ -588,6 +595,7 @@ CWinSystemOSX::CWinSystemOSX() : CWinSystemBase(), m_lostDeviceTimer(this)
   m_can_display_switch = (floor(NSAppKitVersionNumber) >= 949);
   m_lastDisplayNr = -1;
   m_movedToOtherScreen = false;
+  m_refreshRate = 0.0;
 }
 
 CWinSystemOSX::~CWinSystemOSX()
@@ -677,11 +685,14 @@ bool CWinSystemOSX::DestroyWindowSystem()
   return true;
 }
 
-bool CWinSystemOSX::CreateNewWindow(const CStdString& name, bool fullScreen, RESOLUTION_INFO& res, PHANDLE_EVENT_FUNC userFunction)
+bool CWinSystemOSX::CreateNewWindow(const std::string& name, bool fullScreen, RESOLUTION_INFO& res, PHANDLE_EVENT_FUNC userFunction)
 {
-  m_nWidth  = res.iWidth;
-  m_nHeight = res.iHeight;
-  m_bFullScreen = fullScreen;
+  // force initial window creation to be windowed, if fullscreen, it will switch to it below
+  // fixes the white screen of death if starting fullscreen and switching to windowed.
+  RESOLUTION_INFO resInfo = CDisplaySettings::GetInstance().GetResolutionInfo(RES_WINDOW);
+  m_nWidth  = resInfo.iWidth;
+  m_nHeight = resInfo.iHeight;
+  m_bFullScreen = false;
 
   SDL_GL_SetAttribute(SDL_GL_RED_SIZE,   8);
   SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
@@ -705,7 +716,7 @@ bool CWinSystemOSX::CreateNewWindow(const CStdString& name, bool fullScreen, RES
 
   // if we are not starting up windowed, then hide the initial SDL window
   // so we do not see it flash before the fade-out and switch to fullscreen.
-  if (CDisplaySettings::Get().GetCurrentResolution() != RES_WINDOW)
+  if (CDisplaySettings::GetInstance().GetCurrentResolution() != RES_WINDOW)
     ShowHideNSWindow([view window], false);
 
   // disassociate view from context
@@ -729,14 +740,20 @@ bool CWinSystemOSX::CreateNewWindow(const CStdString& name, bool fullScreen, RES
   [new_context makeCurrentContext];
 
   // set the window title
-  NSString *string;
-  string = [ [ NSString alloc ] initWithUTF8String:"XBMC Media Center" ];
+  NSMutableString *string;
+  string = [NSMutableString stringWithUTF8String:CCompileInfo::GetAppName()];
+  [string appendString:@" Entertainment Center" ];
   [ [ [new_context view] window] setTitle:string ];
-  [ string release ];
 
   m_glContext = new_context;
   m_lastOwnedContext = new_context;
   m_bWindowCreated = true;
+
+  // get screen refreshrate - this is needed
+  // when we startup in windowed mode and don't run through SetFullScreen
+  int dummy;
+  m_lastDisplayNr = resInfo.iScreen;
+  GetScreenResolution(&dummy, &dummy, &m_refreshRate, GetCurrentScreen());
 
   return true;
 }
@@ -751,7 +768,7 @@ bool CWinSystemOSX::ResizeWindowInternal(int newWidth, int newHeight, int newLef
 {
   bool ret = ResizeWindow(newWidth, newHeight, newLeft, newTop);
 
-  if( DarwinIsMavericks() )
+  if( CDarwinUtils::IsMavericks() )
   {
     NSView * last_view = (NSView *)additional;
     if (last_view && [last_view window])
@@ -783,6 +800,12 @@ bool CWinSystemOSX::ResizeWindow(int newWidth, int newHeight, int newLeft, int n
       [window update];
       [view setFrameSize:NSMakeSize(newWidth, newHeight)];
       [context update];
+      // this is needed in case we traverse from fullscreen screen 2
+      // to windowed on screen 1 directly where in ScreenChangedNotitication
+      // we don't have a window to get the current screen on
+      // in that case ResizeWindow is called at a later stage from SetFullScreen(false)
+      // and we can grab the correct display number here then
+      m_lastDisplayNr = GetDisplayIndex(GetDisplayIDFromScreen( [window screen] ));;
     }
   }
 
@@ -796,6 +819,7 @@ bool CWinSystemOSX::ResizeWindow(int newWidth, int newHeight, int newLeft, int n
   m_nWidth = newWidth;
   m_nHeight = newHeight;
   m_glContext = context;
+  g_graphicsContext.SetFPS(m_refreshRate);
 
   return true;
 }
@@ -828,7 +852,7 @@ bool CWinSystemOSX::SetFullScreen(bool fullScreen, RESOLUTION_INFO& res, bool bl
   {
     needtoshowme = false;
     ShowHideNSWindow([last_view window], needtoshowme);
-    RESOLUTION_INFO& window = CDisplaySettings::Get().GetResolutionInfo(RES_WINDOW);
+    RESOLUTION_INFO& window = CDisplaySettings::GetInstance().GetResolutionInfo(RES_WINDOW);
     CWinSystemOSX::SetFullScreen(false, window, blankOtherDisplays);
     needtoshowme = true;
   }
@@ -878,7 +902,7 @@ bool CWinSystemOSX::SetFullScreen(bool fullScreen, RESOLUTION_INFO& res, bool bl
     last_window_origin = [[last_view window] frame].origin;
     last_window_level = [[last_view window] level];
 
-    if (CSettings::Get().GetBool("videoscreen.fakefullscreen"))
+    if (CSettings::GetInstance().GetBool(CSettings::SETTING_VIDEOSCREEN_FAKEFULLSCREEN))
     {
       // This is Cocca Windowed FullScreen Mode
       // Get the screen rect of our current display
@@ -921,7 +945,7 @@ bool CWinSystemOSX::SetFullScreen(bool fullScreen, RESOLUTION_INFO& res, bool bl
       [newContext setView:blankView];
 
       // Hide the menu bar.
-      if (GetDisplayID(res.iScreen) == kCGDirectMainDisplay || DarwinIsMavericks() )
+      if (GetDisplayID(res.iScreen) == kCGDirectMainDisplay || CDarwinUtils::IsMavericks() )
         SetMenuBarVisible(false);
 
       // Blank other displays if requested.
@@ -955,7 +979,7 @@ bool CWinSystemOSX::SetFullScreen(bool fullScreen, RESOLUTION_INFO& res, bool bl
         CGDisplayCapture(GetDisplayID(res.iScreen));
 
       // If we don't hide menu bar, it will get events and interrupt the program.
-      if (GetDisplayID(res.iScreen) == kCGDirectMainDisplay || DarwinIsMavericks() )
+      if (GetDisplayID(res.iScreen) == kCGDirectMainDisplay || CDarwinUtils::IsMavericks() )
         SetMenuBarVisible(false);
     }
 
@@ -983,10 +1007,10 @@ bool CWinSystemOSX::SetFullScreen(bool fullScreen, RESOLUTION_INFO& res, bool bl
     [NSCursor unhide];
 
     // Show menubar.
-    if (GetDisplayID(res.iScreen) == kCGDirectMainDisplay || DarwinIsMavericks() )
+    if (GetDisplayID(res.iScreen) == kCGDirectMainDisplay || CDarwinUtils::IsMavericks() )
       SetMenuBarVisible(true);
 
-    if (CSettings::Get().GetBool("videoscreen.fakefullscreen"))
+    if (CSettings::GetInstance().GetBool(CSettings::SETTING_VIDEOSCREEN_FAKEFULLSCREEN))
     {
       // restore the windowed window level
       [[last_view window] setLevel:last_window_level];
@@ -1003,7 +1027,7 @@ bool CWinSystemOSX::SetFullScreen(bool fullScreen, RESOLUTION_INFO& res, bool bl
       // Unblank.
       // Force the unblank when returning from fullscreen, we get called with blankOtherDisplays set false.
       //if (blankOtherDisplays)
-        UnblankDisplays();
+      UnblankDisplays();
     }
     else
     {
@@ -1043,6 +1067,7 @@ bool CWinSystemOSX::SetFullScreen(bool fullScreen, RESOLUTION_INFO& res, bool bl
   ShowHideNSWindow([last_view window], needtoshowme);
   // need to make sure SDL tracks any window size changes
   ResizeWindowInternal(m_nWidth, m_nHeight, -1, -1, last_view);
+  HandlePossibleRefreshrateChange();
 
   return true;
 }
@@ -1057,7 +1082,15 @@ void CWinSystemOSX::UpdateResolutions()
 
   // first screen goes into the current desktop mode
   GetScreenResolution(&w, &h, &fps, 0);
-  UpdateDesktopResolution(CDisplaySettings::Get().GetResolutionInfo(RES_DESKTOP), 0, w, h, fps);
+  UpdateDesktopResolution(CDisplaySettings::GetInstance().GetResolutionInfo(RES_DESKTOP), 0, w, h, fps);
+  NSString *dispName = screenNameForDisplay(GetDisplayID(0));
+
+  if (dispName != nil)
+  {
+    CDisplaySettings::GetInstance().GetResolutionInfo(RES_DESKTOP).strOutput = [dispName UTF8String];
+  }
+
+  CDisplaySettings::GetInstance().ClearCustomResolutions();
 
   // see resolution.h enum RESOLUTION for how the resolutions
   // have to appear in the resolution info vector in CDisplaySettings
@@ -1068,7 +1101,14 @@ void CWinSystemOSX::UpdateResolutions()
     // get current resolution of screen i
     GetScreenResolution(&w, &h, &fps, i);
     UpdateDesktopResolution(res, i, w, h, fps);
-    CDisplaySettings::Get().AddResolutionInfo(res);
+    dispName = screenNameForDisplay(GetDisplayID(i));
+
+    if (dispName != nil)
+    {
+      res.strOutput = [dispName UTF8String];
+    }
+
+    CDisplaySettings::GetInstance().AddResolutionInfo(res);
   }
 
   if (m_can_display_switch)
@@ -1077,6 +1117,7 @@ void CWinSystemOSX::UpdateResolutions()
     // and push to the resolution info vector
     FillInVideoModes();
   }
+  CDisplaySettings::GetInstance().ApplyCalibrations();
 }
 
 /*
@@ -1196,21 +1237,6 @@ void CWinSystemOSX::GetScreenResolution(int* w, int* h, double* fps, int screenI
   if (screenIdx >= GetNumScreens())
     return;
   CGDirectDisplayID display_id = (CGDirectDisplayID)GetDisplayID(screenIdx);
-
-  NSOpenGLContext* context = [NSOpenGLContext currentContext];
-  if (context)
-  {
-    NSView* view;
-
-    view = [context view];
-    if (view)
-    {
-      NSWindow* window;
-      window = [view window];
-      if (window)
-        display_id = GetDisplayIDFromScreen( [window screen] );
-    }
-  }
   CGDisplayModeRef mode  = CGDisplayCopyDisplayMode(display_id);
   *w = CGDisplayModeGetWidth(mode);
   *h = CGDisplayModeGetHeight(mode);
@@ -1267,6 +1293,8 @@ bool CWinSystemOSX::SwitchToVideoMode(int width, int height, double refreshrate,
   CGConfigureDisplayMode(cfg, display_id, dispMode);
   CGError err = CGCompleteDisplayConfiguration(cfg, kCGConfigureForAppOnly);
   CGDisplayRelease(display_id);
+  
+  m_refreshRate = GetDictionaryDouble(dispMode, kCGDisplayRefreshRate);
 
   Cocoa_CVDisplayLinkUpdate();
 
@@ -1290,7 +1318,11 @@ void CWinSystemOSX::FillInVideoModes()
 
     CFArrayRef displayModes = CGDisplayAvailableModes(GetDisplayID(disp));
     NSString *dispName = screenNameForDisplay(GetDisplayID(disp));
-    CLog::Log(LOGNOTICE, "Display %i has name %s", disp, [dispName UTF8String]);
+
+    if (dispName != nil)
+    {
+      CLog::Log(LOGNOTICE, "Display %i has name %s", disp, [dispName UTF8String]);
+    }
 
     if (NULL == displayModes)
       continue;
@@ -1333,8 +1365,14 @@ void CWinSystemOSX::FillInVideoModes()
         // this is what linux does - though it feels that there shouldn't be
         // the same resolution twice... - thats why i add a FIXME here.
         res.strMode = StringUtils::Format("%dx%d @ %.2f", w, h, refreshrate);
+
+        if (dispName != nil)
+        {
+          res.strOutput = [dispName UTF8String];
+        }
+
         g_graphicsContext.ResetOverscan(res);
-        CDisplaySettings::Get().AddResolutionInfo(res);
+        CDisplaySettings::GetInstance().AddResolutionInfo(res);
       }
     }
   }
@@ -1349,6 +1387,9 @@ bool CWinSystemOSX::FlushBuffer(void)
 
 bool CWinSystemOSX::IsObscured(void)
 {
+  if (m_bFullScreen && !CSettings::GetInstance().GetBool(CSettings::SETTING_VIDEOSCREEN_FAKEFULLSCREEN))
+    return false;// in true fullscreen mode - we can't be obscured by anyone...
+
   // check once a second if we are obscured.
   unsigned int now_time = XbmcThreads::SystemClockMillis();
   if (m_obscured_timecheck > now_time)
@@ -1461,7 +1502,7 @@ bool CWinSystemOSX::IsObscured(void)
         if (!obscureLogged)
         {
           std::string appName;
-          if (DarwinCFStringRefToUTF8String(ownerName, appName))
+          if (CDarwinUtils::CFStringRefToUTF8String(ownerName, appName))
             CLog::Log(LOGDEBUG, "WinSystemOSX: Fullscreen window %s obscures XBMC!", appName.c_str());
           obscureLogged = true;
         }
@@ -1520,7 +1561,7 @@ void CWinSystemOSX::NotifyAppFocusChange(bool bGaining)
           // find the screenID
           NSDictionary* screenInfo = [[window screen] deviceDescription];
           NSNumber* screenID = [screenInfo objectForKey:@"NSScreenNumber"];
-          if ((CGDirectDisplayID)[screenID longValue] == kCGDirectMainDisplay || DarwinIsMavericks() )
+          if ((CGDirectDisplayID)[screenID longValue] == kCGDirectMainDisplay || CDarwinUtils::IsMavericks() )
           {
             SetMenuBarVisible(false);
           }
@@ -1567,9 +1608,26 @@ bool CWinSystemOSX::Hide()
   return true;
 }
 
+void CWinSystemOSX::HandlePossibleRefreshrateChange()
+{
+  static double oldRefreshRate = m_refreshRate;
+  Cocoa_CVDisplayLinkUpdate();
+  int dummy = 0;
+  
+  GetScreenResolution(&dummy, &dummy, &m_refreshRate, GetCurrentScreen());
+
+  if (oldRefreshRate != m_refreshRate)
+  {
+    oldRefreshRate = m_refreshRate;
+    // send a message so that videoresolution (and refreshrate)
+    // is changed
+    CApplicationMessenger::GetInstance().PostMsg(TMSG_VIDEORESIZE, m_SDLSurface->w, m_SDLSurface->h);
+  }
+}
+
 void CWinSystemOSX::OnMove(int x, int y)
 {
-  Cocoa_CVDisplayLinkUpdate();
+  HandlePossibleRefreshrateChange();
 }
 
 void CWinSystemOSX::EnableSystemScreenSaver(bool bEnable)
@@ -1699,12 +1757,15 @@ int CWinSystemOSX::GetNumScreens()
 
 int CWinSystemOSX::GetCurrentScreen()
 {
+  return m_lastDisplayNr;
+}
+
+void CWinSystemOSX::WindowChangedScreen()
+{
+  // user has moved the window to a
+  // different screen
   NSOpenGLContext* context = [NSOpenGLContext currentContext];
-  
-  // if user hasn't moved us in windowed mode - return the
-  // last display we were fullscreened at
-  if (!m_movedToOtherScreen)
-    return m_lastDisplayNr;
+  m_lastDisplayNr = -1;
   
   // if we are here the user dragged the window to a different
   // screen and we return the screen of the window
@@ -1719,20 +1780,12 @@ int CWinSystemOSX::GetCurrentScreen()
       window = [view window];
       if (window)
       {
-        m_movedToOtherScreen = false;
-        return GetDisplayIndex(GetDisplayIDFromScreen( [window screen] ));
+        m_lastDisplayNr = GetDisplayIndex(GetDisplayIDFromScreen( [window screen] ));
       }
-        
     }
   }
-  return 0;
-}
-
-void CWinSystemOSX::WindowChangedScreen()
-{
-  // user has moved the window to a
-  // different screen
-  m_movedToOtherScreen = true;
+  if (m_lastDisplayNr == -1)
+    m_lastDisplayNr = 0;// default to main screen
 }
 
 void CWinSystemOSX::AnnounceOnLostDevice()
@@ -1756,6 +1809,11 @@ void CWinSystemOSX::AnnounceOnResetDevice()
 void* CWinSystemOSX::GetCGLContextObj()
 {
   return [(NSOpenGLContext*)m_glContext CGLContextObj];
+}
+
+void* CWinSystemOSX::GetNSOpenGLContext()
+{
+  return m_glContext;
 }
 
 std::string CWinSystemOSX::GetClipboardText(void)

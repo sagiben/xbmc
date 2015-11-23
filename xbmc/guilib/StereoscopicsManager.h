@@ -32,6 +32,15 @@
 
 class CAction;
 
+enum STEREOSCOPIC_PLAYBACK_MODE
+{
+  STEREOSCOPIC_PLAYBACK_MODE_ASK,
+  STEREOSCOPIC_PLAYBACK_MODE_PREFERRED,
+  STEREOSCOPIC_PLAYBACK_MODE_MONO,
+
+  STEREOSCOPIC_PLAYBACK_MODE_IGNORE = 100,
+};
+
 class CStereoscopicsManager : public ISettingCallback,
                               public IMsgTargetCallback
 {
@@ -42,16 +51,17 @@ public:
   /*!
    * @return static instance of CStereoscopicsManager
    */
-  static CStereoscopicsManager& Get(void);
+  static CStereoscopicsManager& GetInstance();
 
   void Initialize(void);
-  void SetStereoMode(const RENDER_STEREO_MODE &mode);
   RENDER_STEREO_MODE GetStereoMode(void);
+  void SetStereoModeByUser(const RENDER_STEREO_MODE &mode);
+  void SetStereoMode(const RENDER_STEREO_MODE &mode);
   RENDER_STEREO_MODE GetNextSupportedStereoMode(const RENDER_STEREO_MODE &currentMode, int step = 1);
   std::string DetectStereoModeByString(const std::string &needle);
-  RENDER_STEREO_MODE GetStereoModeByUserChoice(const CStdString &heading = "");
+  RENDER_STEREO_MODE GetStereoModeByUserChoice(const std::string &heading = "");
   RENDER_STEREO_MODE GetStereoModeOfPlayingVideo(void);
-  CStdString GetLabelForStereoMode(const RENDER_STEREO_MODE &mode);
+  const std::string &GetLabelForStereoMode(const RENDER_STEREO_MODE &mode) const;
   RENDER_STEREO_MODE GetPreferredPlaybackMode(void);
   int ConvertVideoToGuiStereoMode(const std::string &mode);
   /**
@@ -69,8 +79,8 @@ public:
    */
   CAction ConvertActionCommandToAction(const std::string &command, const std::string &parameter);
   std::string NormalizeStereoMode(const std::string &mode);
-  virtual void OnSettingChanged(const CSetting *setting);
-  virtual bool OnMessage(CGUIMessage &message);
+  virtual void OnSettingChanged(const CSetting *setting) override;
+  virtual bool OnMessage(CGUIMessage &message) override;
   /*!
    * @brief Handle 3D specific cActions
    * @param action The action to process
@@ -83,5 +93,6 @@ private:
   void OnPlaybackStarted(void);
   void OnPlaybackStopped(void);
 
-  RENDER_STEREO_MODE m_lastStereoMode;
+  RENDER_STEREO_MODE m_stereoModeSetByUser;
+  RENDER_STEREO_MODE m_lastStereoModeSetByUser;
 };

@@ -18,7 +18,7 @@
  *  <http://www.gnu.org/licenses/>.
  *
  */
-#include "utils/StdString.h"
+#include <string>
 
 class IImage
 {
@@ -43,7 +43,7 @@ public:
    \param format The format of the output buffer (JpegIO only)
    \return true if the image data could be decoded to the output buffer
    */
-  virtual bool Decode(const unsigned char *pixels, unsigned int pitch, unsigned int format)=0;
+  virtual bool Decode(unsigned char* const pixels, unsigned int width, unsigned int height, unsigned int pitch, unsigned int format)=0;
   /*!
    \brief Encodes an thumbnail from raw bits of given memory location
    \remarks Caller need to call ReleaseThumbnailBuffer() afterwards to free the output buffer
@@ -57,7 +57,7 @@ public:
    \param bufferoutSize The output buffer size
    \return true if the thumbnail was successfully created
    */
-  virtual bool CreateThumbnailFromSurface(unsigned char* bufferin, unsigned int width, unsigned int height, unsigned int format, unsigned int pitch, const CStdString& destFile, 
+  virtual bool CreateThumbnailFromSurface(unsigned char* bufferin, unsigned int width, unsigned int height, unsigned int format, unsigned int pitch, const std::string& destFile, 
                                           unsigned char* &bufferout, unsigned int &bufferoutSize)=0;
   /*!
    \brief Frees the output buffer allocated by CreateThumbnailFromSurface

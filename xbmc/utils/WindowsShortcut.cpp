@@ -42,6 +42,7 @@ static char THIS_FILE[] = __FILE__;
 
 #define VOLUME_LOCAL        1
 #define VOLUME_NETWORK      2
+
 //////////////////////////////////////////////////////////////////////
 // Construction/Destruction
 //////////////////////////////////////////////////////////////////////
@@ -54,7 +55,7 @@ CWindowsShortcut::~CWindowsShortcut()
 {
 }
 
-bool CWindowsShortcut::GetShortcut(const string& strFileName, string& strFileOrDir)
+bool CWindowsShortcut::GetShortcut(const std::string& strFileName, std::string& strFileOrDir)
 {
   strFileOrDir = "";
   if (!IsShortcut(strFileName) ) return false;
@@ -96,7 +97,7 @@ bool CWindowsShortcut::GetShortcut(const string& strFileName, string& strFileOrD
   strFileOrDir = "smb:";
   // share name
   iPos += dwOffsetNetworkVolumeInfo + 0x14;
-  while (byHeader[iPos] != 0 && iPos < iBytesRead)
+  while (iPos < iBytesRead && byHeader[iPos] != 0)
   {
     if (byHeader[iPos] == '\\') byHeader[iPos] = '/';
     strFileOrDir += (char)byHeader[iPos];
@@ -105,7 +106,7 @@ bool CWindowsShortcut::GetShortcut(const string& strFileName, string& strFileOrD
   iPos++;
   // file/folder name
   strFileOrDir += '/';
-  while (byHeader[iPos] != 0 && iPos < iBytesRead)
+  while (iPos < iBytesRead && byHeader[iPos] != 0)
   {
     if (byHeader[iPos] == '\\') byHeader[iPos] = '/';
     strFileOrDir += (char)byHeader[iPos];
@@ -114,7 +115,7 @@ bool CWindowsShortcut::GetShortcut(const string& strFileName, string& strFileOrD
   return true;
 }
 
-bool CWindowsShortcut::IsShortcut(const string& strFileName)
+bool CWindowsShortcut::IsShortcut(const std::string& strFileName)
 {
   CFile file;
   if (!file.Open(strFileName.c_str(), CFile::typeBinary | CFile::modeRead)) return false;

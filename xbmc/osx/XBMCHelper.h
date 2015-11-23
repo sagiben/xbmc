@@ -38,7 +38,7 @@ class XBMCHelper : public ISettingCallback
  public:
   static XBMCHelper& GetInstance();
 
-  virtual bool OnSettingChanging(const CSetting *setting);
+  virtual bool OnSettingChanging(const CSetting *setting) override;
 
   void Start();
   void Stop();
@@ -57,6 +57,7 @@ private:
   XBMCHelper(XBMCHelper const& );
   XBMCHelper& operator=(XBMCHelper const&);
 
+  void HandleLaunchAgent();
   void Install();
   void Uninstall();
 

@@ -1,5 +1,4 @@
 #pragma once
-
 /*
  *      Copyright (C) 2012-2013 Team XBMC
  *      http://xbmc.org
@@ -20,41 +19,37 @@
  *
  */
 
-#include "GUIWindowPVRCommon.h"
 #include "epg/EpgSearchFilter.h"
+#include "GUIWindowPVRBase.h"
 
 namespace PVR
 {
-  class CGUIWindowPVR;
-
-  class CGUIWindowPVRSearch : public CGUIWindowPVRCommon
+  class CGUIWindowPVRSearch : public CGUIWindowPVRBase
   {
-    friend class CGUIWindowPVR;
-    friend class CGUIWindowPVRCommon;
-
   public:
-    CGUIWindowPVRSearch(CGUIWindowPVR *parent);
+    CGUIWindowPVRSearch(bool bRadio);
     virtual ~CGUIWindowPVRSearch(void) {};
 
-    void GetContextButtons(int itemNumber, CContextButtons &buttons) const;
+    bool OnMessage(CGUIMessage& message);
+    void OnWindowLoaded();
+    void GetContextButtons(int itemNumber, CContextButtons &buttons);
     bool OnContextButton(int itemNumber, CONTEXT_BUTTON button);
-    void UpdateData(bool bUpdateSelectedFile = true);
+    bool OnContextButton(const CFileItem &item, CONTEXT_BUTTON button);
+
+  protected:
+    void OnPrepareFileItems(CFileItemList &items);
 
   private:
-
-    bool OnClickButton(CGUIMessage &message);
-    bool OnClickList(CGUIMessage &message);
-
     bool OnContextButtonClear(CFileItem *item, CONTEXT_BUTTON button);
     bool OnContextButtonInfo(CFileItem *item, CONTEXT_BUTTON button);
+    bool OnContextButtonPlay(CFileItem *item, CONTEXT_BUTTON button);
     bool OnContextButtonStartRecord(CFileItem *item, CONTEXT_BUTTON button);
     bool OnContextButtonStopRecord(CFileItem *item, CONTEXT_BUTTON button);
+    bool OnContextButtonDeleteTimer(CFileItem *item, CONTEXT_BUTTON button);
 
-    bool ActionShowSearch(CFileItem *item);
-    void ShowSearchResults();
+    void OpenDialogSearch();
 
-    bool               m_bSearchStarted;
-    bool               m_bSearchConfirmed;
-    EPG::EpgSearchFilter m_searchfilter;
+    bool                  m_bSearchConfirmed;
+    EPG::EpgSearchFilter  m_searchfilter;
   };
 }

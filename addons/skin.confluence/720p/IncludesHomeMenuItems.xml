@@ -135,43 +135,36 @@
 		<control type="button" id="90112">
 			<include>ButtonHomeSubCommonValues</include>
 			<label>133</label>
-			<onclick>ActivateWindow(MusicLibrary,Artists,return)</onclick>
+			<onclick>ActivateWindow(Music,Artists,return)</onclick>
 			<visible>Library.HasContent(Music)</visible>
 		</control>
 		<control type="button" id="90113">
 			<include>ButtonHomeSubCommonValues</include>
 			<label>132</label>
-			<onclick>ActivateWindow(MusicLibrary,Albums,return)</onclick>
+			<onclick>ActivateWindow(Music,Albums,return)</onclick>
 			<visible>Library.HasContent(Music)</visible>
 		</control>
 		<control type="button" id="90114">
 			<include>ButtonHomeSubCommonValues</include>
 			<label>134</label>
-			<onclick>ActivateWindow(MusicLibrary,Songs,return)</onclick>
+			<onclick>ActivateWindow(Music,Songs,return)</onclick>
 			<visible>Library.HasContent(Music)</visible>
 		</control>
 		<control type="button" id="90115">
 			<include>ButtonHomeSubCommonValues</include>
 			<label>744</label>
-			<onclick>ActivateWindow(MusicFiles)</onclick>
+			<onclick>ActivateWindow(Music,Files,return)</onclick>
 		</control>
 		<control type="button" id="90116">
 			<include>ButtonHomeSubCommonValues</include>
 			<label>14022</label>
-			<onclick>ActivateWindow(MusicLibrary,root)</onclick>
+			<onclick>ActivateWindow(Music,Root)</onclick>
 			<visible>Library.HasContent(Music)</visible>
 		</control>
 		<control type="button" id="90117">
 			<include>ButtonHomeSubCommonValues</include>
 			<label>24001</label>
-			<onclick>ActivateWindow(MusicLibrary,Addons,return)</onclick>
-			<visible>Library.HasContent(Music)</visible>
-		</control>
-		<control type="button" id="90118">
-			<include>ButtonHomeSubCommonValues</include>
-			<label>24001</label>
-			<onclick>ActivateWindow(MusicFiles,Addons,return)</onclick>
-			<visible>!Library.HasContent(Music)</visible>
+			<onclick>ActivateWindow(Music,Addons,return)</onclick>
 		</control>
 		<control type="image" id="90119">
 			<width>35</width>
@@ -205,7 +198,13 @@
 			<label>130</label>
 			<onclick>ActivateWindow(SystemInfo)</onclick>
 		</control>
-		<control type="image" id="90126">
+		<control type="button" id="90126">
+			<include>ButtonHomeSubCommonValues</include>
+			<label>14111</label>
+			<onclick>ActivateWindow(EventLog,events://,return)</onclick>
+			<visible>system.getbool(eventlog.enabled)</visible>
+		</control>
+		<control type="image" id="90127">
 			<width>35</width>
 			<height>35</height>
 			<texture border="0,0,0,3">HomeSubEnd.png</texture>
@@ -223,7 +222,7 @@
 			<onclick>SetFocus(9000)</onclick>
 			<onclick>EjectTray()</onclick>
 		</control>
-		<control type="image" id="90126">
+		<control type="image" id="90133">
 			<width>35</width>
 			<height>35</height>
 			<texture border="0,0,0,3">HomeSubEnd.png</texture>
@@ -246,44 +245,80 @@
 			<texture border="0,0,0,3">HomeSubEnd.png</texture>
 		</control>
 	</include>
-	<include name="HomeSubMenuLiveTV">
+	<include name="HomeSubMenuTV">
 		<control type="image" id="90141">
 			<width>35</width>
 			<height>35</height>
 			<texture border="0,0,0,3" flipx="true">HomeSubEnd.png</texture>
 		</control>
-		<control type="button" id="90142">
-			<include>ButtonHomeSubCommonValues</include>
-			<label>19023</label>
-			<onclick>ActivateWindowAndFocus(MyPVR, 32,0, 11,0)</onclick>
-		</control>
 		<control type="button" id="90143">
 			<include>ButtonHomeSubCommonValues</include>
-			<label>19024</label>
-			<onclick>ActivateWindowAndFocus(MyPVR, 33,0, 12,0)</onclick>
+			<label>19019</label>
+			<onclick>ActivateWindow(TVChannels)</onclick>
 		</control>
 		<control type="button" id="90144">
 			<include>ButtonHomeSubCommonValues</include>
-			<label>19069</label>
-			<onclick>ActivateWindowAndFocus(MyPVR, 31,0, 10,0)</onclick>
+			<label>22020</label>
+			<onclick>ActivateWindow(TVGuide)</onclick>
 		</control>
 		<control type="button" id="90145">
 			<include>ButtonHomeSubCommonValues</include>
 			<label>19163</label>
-			<onclick>ActivateWindowAndFocus(MyPVR, 34,0, 13,0)</onclick>
+			<onclick>ActivateWindow(TVRecordings)</onclick>
 		</control>
 		<control type="button" id="90146">
 			<include>ButtonHomeSubCommonValues</include>
 			<label>19040</label>
-			<onclick>ActivateWindowAndFocus(MyPVR, 35,0, 14,0)</onclick>
+			<onclick>ActivateWindow(TVTimers)</onclick>
 		</control>
-		<control type="image" id="90147">
+		<control type="button" id="90147">
+			<include>ButtonHomeSubCommonValues</include>
+			<label>137</label>
+			<onclick>ActivateWindow(TVSearch)</onclick>
+		</control>
+		<control type="image" id="90148">
 			<width>35</width>
 			<height>35</height>
 			<texture border="0,0,0,3">HomeSubEnd.png</texture>
 		</control>
 	</include>
-
+	<include name="HomeSubMenuRadio">
+		<control type="image" id="90141">
+			<width>35</width>
+			<height>35</height>
+			<texture border="0,0,0,3" flipx="true">HomeSubEnd.png</texture>
+		</control>
+		<control type="button" id="90243">
+			<include>ButtonHomeSubCommonValues</include>
+			<label>19019</label>
+			<onclick>ActivateWindow(RadioChannels)</onclick>
+		</control>
+		<control type="button" id="90244">
+			<include>ButtonHomeSubCommonValues</include>
+			<label>22020</label>
+			<onclick>ActivateWindow(RadioGuide)</onclick>
+		</control>
+		<control type="button" id="90245">
+			<include>ButtonHomeSubCommonValues</include>
+			<label>19163</label>
+			<onclick>ActivateWindow(RadioRecordings)</onclick>
+		</control>
+		<control type="button" id="90246">
+			<include>ButtonHomeSubCommonValues</include>
+			<label>19040</label>
+			<onclick>ActivateWindow(RadioTimers)</onclick>
+		</control>
+		<control type="button" id="90247">
+			<include>ButtonHomeSubCommonValues</include>
+			<label>137</label>
+			<onclick>ActivateWindow(RadioSearch)</onclick>
+		</control>
+		<control type="image" id="90248">
+			<width>35</width>
+			<height>35</height>
+			<texture border="0,0,0,3">HomeSubEnd.png</texture>
+		</control>
+	</include>
 	<include name="HomeAddonItemsVideos">
 		<item>
 			<label>$INFO[system.addontitle(Skin.String(HomeVideosButton1))]</label>

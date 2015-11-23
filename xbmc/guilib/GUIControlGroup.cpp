@@ -19,9 +19,11 @@
  */
 
 #include "GUIControlGroup.h"
-#include "GUIControlProfiler.h"
 
-using namespace std;
+#include <cassert>
+#include <utility>
+
+#include "guiinfo/GUIInfoLabels.h"
 
 CGUIControlGroup::CGUIControlGroup()
 {
@@ -133,9 +135,16 @@ void CGUIControlGroup::Render()
   g_graphicsContext.RestoreOrigin();
 }
 
+void CGUIControlGroup::RenderEx()
+{
+  for (iControls it = m_children.begin(); it != m_children.end(); ++it)
+    (*it)->RenderEx();
+  CGUIControl::RenderEx();
+}
+
 bool CGUIControlGroup::OnAction(const CAction &action)
 {
-  ASSERT(false);  // unimplemented
+  assert(false);  // unimplemented
   return false;
 }
 
@@ -434,16 +443,35 @@ bool CGUIControlGroup::HasVisibleID(int id) const
   return false;
 }
 
-const CGUIControl* CGUIControlGroup::GetControl(int iControl) const
+CGUIControl *CGUIControlGroup::GetControl(int iControl)
 {
   CGUIControl *pPotential = NULL;
+  LookupMap::iterator first = m_lookup.find(iControl);
+  if (first != m_lookup.end())
+  {
+    LookupMap::iterator last = m_lookup.upper_bound(iControl);
+    for (LookupMap::iterator i = first; i != last; ++i)
+    {
+      CGUIControl *control = i->second;
+      if (control->IsVisible())
+        return control;
+      else if (!pPotential)
+        pPotential = control;
+    }
+  }
+  return pPotential;
+}
+
+const CGUIControl* CGUIControlGroup::GetControl(int iControl) const
+{
+  const CGUIControl *pPotential = NULL;
   LookupMap::const_iterator first = m_lookup.find(iControl);
   if (first != m_lookup.end())
   {
     LookupMap::const_iterator last = m_lookup.upper_bound(iControl);
     for (LookupMap::const_iterator i = first; i != last; ++i)
     {
-      CGUIControl *control = i->second;
+      const CGUIControl *control = i->second;
       if (control->IsVisible())
         return control;
       else if (!pPotential)
@@ -467,7 +495,7 @@ CGUIControl *CGUIControlGroup::GetFocusedControl() const
   if (m_focusedControl)
   {
     // we may have multiple controls with same id - we pick first that has focus
-    pair<LookupMap::const_iterator, LookupMap::const_iterator> range = m_lookup.equal_range(m_focusedControl);
+    std::pair<LookupMap::const_iterator, LookupMap::const_iterator> range = m_lookup.equal_range(m_focusedControl);
     for (LookupMap::const_iterator i = range.first; i != range.second; ++i)
     {
       if (i->second->HasFocus())
@@ -532,10 +560,10 @@ void CGUIControlGroup::AddLookup(CGUIControl *control)
   { // first add all the subitems of this group (if they exist)
     const LookupMap map = ((CGUIControlGroup *)control)->GetLookup();
     for (LookupMap::const_iterator i = map.begin(); i != map.end(); ++i)
-      m_lookup.insert(m_lookup.upper_bound(i->first), make_pair(i->first, i->second));
+      m_lookup.insert(m_lookup.upper_bound(i->first), std::make_pair(i->first, i->second));
   }
   if (control->GetID())
-    m_lookup.insert(m_lookup.upper_bound(control->GetID()), make_pair(control->GetID(), control));
+    m_lookup.insert(m_lookup.upper_bound(control->GetID()), std::make_pair(control->GetID(), control));
   // ensure that our size is what it should be
   if (m_parentControl)
     ((CGUIControlGroup *)m_parentControl)->AddLookup(control);
@@ -604,7 +632,7 @@ bool CGUIControlGroup::InsertControl(CGUIControl *control, const CGUIControl *in
   return false;
 }
 
-void CGUIControlGroup::SaveStates(vector<CControlState> &states)
+void CGUIControlGroup::SaveStates(std::vector<CControlState> &states)
 {
   // save our state, and that of our children
   states.push_back(CControlState(GetID(), m_focusedControl));
@@ -651,7 +679,7 @@ void CGUIControlGroup::ClearAll()
   SetInvalid();
 }
 
-void CGUIControlGroup::GetContainers(vector<CGUIControl *> &containers) const
+void CGUIControlGroup::GetContainers(std::vector<CGUIControl *> &containers) const
 {
   for (ciControls it = m_children.begin();it != m_children.end(); ++it)
   {

@@ -20,7 +20,6 @@
 #include "system.h"
 
 #include "AEFactory.h"
-#include "Utils/AEUtil.h"
 
 #include "Engines/ActiveAE/ActiveAE.h"
 
@@ -40,22 +39,11 @@ IAE *CAEFactory::GetEngine()
 
 bool CAEFactory::LoadEngine()
 {
-  return CAEFactory::LoadEngine(AE_ENGINE_ACTIVE);
-}
-
-bool CAEFactory::LoadEngine(enum AEEngine engine)
-{
   /* can only load the engine once, XBMC restart is required to change it */
   if (AE)
     return false;
 
-  switch(engine)
-  {
-    case AE_ENGINE_NULL     :
-    case AE_ENGINE_ACTIVE   : AE = new ActiveAE::CActiveAE(); break;
-    default:
-      return false;
-  }
+  AE = new ActiveAE::CActiveAE();
 
   if (AE && !AE->CanInit())
   {
@@ -183,23 +171,23 @@ std::string CAEFactory::GetDefaultDevice(bool passthrough)
 bool CAEFactory::SupportsRaw(AEDataFormat format, int samplerate)
 {
   // check if passthrough is enabled
-  if (!CSettings::Get().GetBool("audiooutput.passthrough"))
+  if (!CSettings::GetInstance().GetBool(CSettings::SETTING_AUDIOOUTPUT_PASSTHROUGH))
     return false;
 
   // fixed config disabled passthrough
-  if (CSettings::Get().GetInt("audiooutput.config") == AE_CONFIG_FIXED)
+  if (CSettings::GetInstance().GetInt(CSettings::SETTING_AUDIOOUTPUT_CONFIG) == AE_CONFIG_FIXED)
     return false;
 
   // check if the format is enabled in settings
-  if (format == AE_FMT_AC3 && !CSettings::Get().GetBool("audiooutput.ac3passthrough"))
+  if (format == AE_FMT_AC3 && !CSettings::GetInstance().GetBool(CSettings::SETTING_AUDIOOUTPUT_AC3PASSTHROUGH))
     return false;
-  if (format == AE_FMT_DTS && !CSettings::Get().GetBool("audiooutput.dtspassthrough"))
+  if (format == AE_FMT_DTS && !CSettings::GetInstance().GetBool(CSettings::SETTING_AUDIOOUTPUT_DTSPASSTHROUGH))
     return false;
-  if (format == AE_FMT_EAC3 && !CSettings::Get().GetBool("audiooutput.eac3passthrough"))
+  if (format == AE_FMT_EAC3 && !CSettings::GetInstance().GetBool(CSettings::SETTING_AUDIOOUTPUT_EAC3PASSTHROUGH))
     return false;
-  if (format == AE_FMT_TRUEHD && !CSettings::Get().GetBool("audiooutput.truehdpassthrough"))
+  if (format == AE_FMT_TRUEHD && !CSettings::GetInstance().GetBool(CSettings::SETTING_AUDIOOUTPUT_TRUEHDPASSTHROUGH))
     return false;
-  if (format == AE_FMT_DTSHD && !CSettings::Get().GetBool("audiooutput.dtshdpassthrough"))
+  if (format == AE_FMT_DTSHD && !CSettings::GetInstance().GetBool(CSettings::SETTING_AUDIOOUTPUT_DTSHDPASSTHROUGH))
     return false;
 
   if(AE)
@@ -213,6 +201,20 @@ bool CAEFactory::SupportsSilenceTimeout()
   if(AE)
     return AE->SupportsSilenceTimeout();
 
+  return false;
+}
+
+bool CAEFactory::HasStereoAudioChannelCount()
+{
+  if(AE)
+    return AE->HasStereoAudioChannelCount();
+  return false;
+}
+
+bool CAEFactory::HasHDAudioChannelCount()
+{
+  if(AE)
+    return AE->HasHDAudioChannelCount();
   return false;
 }
 
@@ -291,17 +293,17 @@ void CAEFactory::GarbageCollect()
     AE->GarbageCollect();
 }
 
-void CAEFactory::SettingOptionsAudioDevicesFiller(const CSetting *setting, std::vector< std::pair<std::string, std::string> > &list, std::string &current)
+void CAEFactory::SettingOptionsAudioDevicesFiller(const CSetting *setting, std::vector< std::pair<std::string, std::string> > &list, std::string &current, void *data)
 {
   SettingOptionsAudioDevicesFillerGeneral(setting, list, current, false);
 }
 
-void CAEFactory::SettingOptionsAudioDevicesPassthroughFiller(const CSetting *setting, std::vector< std::pair<std::string, std::string> > &list, std::string &current)
+void CAEFactory::SettingOptionsAudioDevicesPassthroughFiller(const CSetting *setting, std::vector< std::pair<std::string, std::string> > &list, std::string &current, void *data)
 {
   SettingOptionsAudioDevicesFillerGeneral(setting, list, current, true);
 }
 
-void CAEFactory::SettingOptionsAudioQualityLevelsFiller(const CSetting *setting, std::vector< std::pair<std::string, int> > &list, int &current)
+void CAEFactory::SettingOptionsAudioQualityLevelsFiller(const CSetting *setting, std::vector< std::pair<std::string, int> > &list, int &current, void *data)
 {
   if (!AE)
     return;
@@ -314,9 +316,11 @@ void CAEFactory::SettingOptionsAudioQualityLevelsFiller(const CSetting *setting,
     list.push_back(std::make_pair(g_localizeStrings.Get(13508), AE_QUALITY_HIGH));
   if(AE->SupportsQualityLevel(AE_QUALITY_REALLYHIGH))
     list.push_back(std::make_pair(g_localizeStrings.Get(13509), AE_QUALITY_REALLYHIGH));
+  if(AE->SupportsQualityLevel(AE_QUALITY_GPU))
+    list.push_back(std::make_pair(g_localizeStrings.Get(38010), AE_QUALITY_GPU));
 }
 
-void CAEFactory::SettingOptionsAudioStreamsilenceFiller(const CSetting *setting, std::vector< std::pair<std::string, int> > &list, int &current)
+void CAEFactory::SettingOptionsAudioStreamsilenceFiller(const CSetting *setting, std::vector< std::pair<std::string, int> > &list, int &current, void *data)
 {
   if (!AE)
     return;
@@ -374,9 +378,9 @@ void CAEFactory::UnregisterAudioCallback()
     AE->UnregisterAudioCallback();
 }
 
-bool CAEFactory::IsSettingVisible(const std::string &condition, const std::string &value, const std::string &settingId)
+bool CAEFactory::IsSettingVisible(const std::string &condition, const std::string &value, const CSetting *setting, void *data)
 {
-  if (settingId.empty() || value.empty() || !AE)
+  if (setting == NULL || value.empty() || !AE)
     return false;
 
   return AE->IsSettingVisible(value);

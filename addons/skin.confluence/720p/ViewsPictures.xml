@@ -7,6 +7,7 @@
 			<left>0</left>
 			<top>440</top>
 			<control type="wraplist" id="510">
+				<depth>DepthContent+</depth>
 				<left>-25</left>
 				<top>5</top>
 				<width>1330</width>
@@ -44,6 +45,7 @@
 				</itemlayout>
 				<focusedlayout height="200" width="190">
 					<control type="image">
+						<depth>DepthContentPopout</depth>
 						<left>15</left>
 						<top>40</top>
 						<width>160</width>
@@ -53,18 +55,19 @@
 						<bordersize>8</bordersize>
 						<fadetime>200</fadetime>
 						<texture border="2">ThumbBG.png</texture>
-						<animation reversible="false" effect="zoom" start="15,40,160,160" end="-10,-5,210,210" time="200">focus</animation>
-						<animation reversible="false" effect="zoom" end="15,40,160,160" start="-10,-5,210,210" time="200">unfocus</animation>
+						<animation reversible="false" effect="zoom" start="15,40,160,160" end="-10,-5,210,210" time="150">focus</animation>
+						<animation reversible="false" effect="zoom" end="15,40,160,160" start="-10,-5,210,210" time="150">unfocus</animation>
 					</control>
 					<control type="image">
+						<depth>DepthContentPopout</depth>
 						<left>25</left>
 						<top>50</top>
 						<width>140</width>
 						<height>140</height>
 						<aspectratio>keep</aspectratio>
 						<texture background="true">$INFO[ListItem.Icon]</texture>
-						<animation reversible="false" effect="zoom" start="25,50,140,140" end="5,10,180,180" time="200">focus</animation>
-						<animation reversible="false" effect="zoom" end="25,50,140,140" start="5,10,180,180" time="200">unfocus</animation>
+						<animation reversible="false" effect="zoom" start="25,50,140,140" end="5,10,180,180" time="150">focus</animation>
+						<animation reversible="false" effect="zoom" end="25,50,140,140" start="5,10,180,180" time="150">unfocus</animation>
 					</control>
 				</focusedlayout>
 			</control>

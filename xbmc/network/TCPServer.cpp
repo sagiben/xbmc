@@ -34,10 +34,12 @@
 #include "websocket/WebSocketManager.h"
 #include "Network.h"
 
+#if defined(TARGET_WINDOWS) || defined(HAVE_LIBBLUETOOTH)
 static const char     bt_service_name[] = "XBMC JSON-RPC";
 static const char     bt_service_desc[] = "Interface for XBMC remote control over bluetooth";
 static const char     bt_service_prov[] = "XBMC JSON-RPC Provider";
 static const uint32_t bt_service_guid[] = {0x65AE4CC0, 0x775D11E0, 0xBE16CE28, 0x4824019B};
+#endif
 
 #ifdef HAVE_LIBBLUETOOTH
 #include <bluetooth/bluetooth.h>
@@ -53,7 +55,6 @@ static const bdaddr_t bt_bdaddr_local = {{0, 0, 0, 0xff, 0xff, 0xff}};
 
 using namespace JSONRPC;
 using namespace ANNOUNCEMENT;
-//using namespace std; On VS2010, bind conflicts with std::bind
 
 #define RECEIVEBUFFER 1024
 
@@ -112,7 +113,7 @@ void CTCPServer::Process()
     struct timeval  to     = {1, 0};
     FD_ZERO(&rfds);
 
-    for (std::vector<SOCKET>::iterator it = m_servers.begin(); it != m_servers.end(); it++)
+    for (std::vector<SOCKET>::iterator it = m_servers.begin(); it != m_servers.end(); ++it)
     {
       FD_SET(*it, &rfds);
       if ((intptr_t)*it > (intptr_t)max_fd)
@@ -182,7 +183,7 @@ void CTCPServer::Process()
         }
       }
 
-      for (std::vector<SOCKET>::iterator it = m_servers.begin(); it != m_servers.end(); it++)
+      for (std::vector<SOCKET>::iterator it = m_servers.begin(); it != m_servers.end(); ++it)
       {
         if (FD_ISSET(*it, &rfds))
         {
@@ -255,7 +256,7 @@ bool CTCPServer::Initialize()
 
   if (started)
   {
-    CAnnouncementManager::AddAnnouncer(this);
+    CAnnouncementManager::GetInstance().AddAnnouncer(this);
     CLog::Log(LOGINFO, "JSONRPC Server: Successfully initialized");
     return true;
   }
@@ -477,7 +478,7 @@ void CTCPServer::Deinitialize()
   m_sdpd = NULL;
 #endif
 
-  CAnnouncementManager::RemoveAnnouncer(this);
+  CAnnouncementManager::GetInstance().RemoveAnnouncer(this);
 }
 
 CTCPServer::CTCPClient::CTCPClient()

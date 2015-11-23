@@ -23,7 +23,9 @@
 #include <string>
 
 #include "settings/lib/ISettingCallback.h"
+#include "settings/lib/ISettingsHandler.h"
 #include "settings/lib/ISubSettings.h"
+#include "settings/AudioDSPSettings.h"
 #include "settings/VideoSettings.h"
 #include "threads/CriticalSection.h"
 
@@ -38,20 +40,26 @@ typedef enum {
   WatchedModeWatched
 } WatchedMode;
 
-class CMediaSettings : public ISettingCallback, public ISubSettings
+class CMediaSettings : public ISettingCallback, public ISettingsHandler, public ISubSettings
 {
 public:
-  static CMediaSettings& Get();
+  static CMediaSettings& GetInstance();
 
-  virtual bool Load(const TiXmlNode *settings);
-  virtual bool Save(TiXmlNode *settings) const;
+  virtual bool Load(const TiXmlNode *settings) override;
+  virtual bool Save(TiXmlNode *settings) const override;
 
-  virtual void OnSettingAction(const CSetting *setting);
+  virtual void OnSettingAction(const CSetting *setting) override;
+  virtual void OnSettingsLoaded() override;
 
   const CVideoSettings& GetDefaultVideoSettings() const { return m_defaultVideoSettings; }
   CVideoSettings& GetDefaultVideoSettings() { return m_defaultVideoSettings; }
   const CVideoSettings& GetCurrentVideoSettings() const { return m_currentVideoSettings; }
   CVideoSettings& GetCurrentVideoSettings() { return m_currentVideoSettings; }
+
+  const CAudioSettings& GetDefaultAudioSettings() const { return m_defaultAudioSettings; }
+  CAudioSettings& GetDefaultAudioSettings() { return m_defaultAudioSettings; }
+  const CAudioSettings& GetCurrentAudioSettings() const { return m_currentAudioSettings; }
+  CAudioSettings& GetCurrentAudioSettings() { return m_currentAudioSettings; }
 
   /*! \brief Retreive the watched mode for the given content type
    \param content Current content type
@@ -73,14 +81,10 @@ public:
    */
   void CycleWatchedMode(const std::string &content);
 
-  bool DoesMusicPlaylistRepeat() const { return m_musicPlaylistRepeat; }
   void SetMusicPlaylistRepeat(bool repeats) { m_musicPlaylistRepeat = repeats; }
-  bool IsMusicPlaylistShuffled() const { return m_musicPlaylistShuffle; }
   void SetMusicPlaylistShuffled(bool shuffled) { m_musicPlaylistShuffle = shuffled; }
 
-  bool DoesVideoPlaylistRepeat() const { return m_videoPlaylistRepeat; }
   void SetVideoPlaylistRepeat(bool repeats) { m_videoPlaylistRepeat = repeats; }
-  bool IsVideoPlaylistShuffled() const { return m_videoPlaylistShuffle; }
   void SetVideoPlaylistShuffled(bool shuffled) { m_videoPlaylistShuffle = shuffled; }
 
   bool DoesVideoStartWindowed() const { return m_videoStartWindowed; }
@@ -104,6 +108,9 @@ protected:
 private:
   CVideoSettings m_defaultVideoSettings;
   CVideoSettings m_currentVideoSettings;
+
+  CAudioSettings m_defaultAudioSettings;
+  CAudioSettings m_currentAudioSettings;
 
   typedef std::map<std::string, WatchedMode> WatchedModes;
   WatchedModes m_watchedModes;

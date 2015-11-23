@@ -23,13 +23,14 @@
 #include <set>
 #include <vector>
 
-#include "ISetting.h"
 #include "ISettingCallback.h"
 #include "ISettingControlCreator.h"
 #include "ISettingCreator.h"
 #include "ISettingsHandler.h"
 #include "ISubSettings.h"
+#include "Setting.h"
 #include "SettingConditions.h"
+#include "SettingDefinitions.h"
 #include "SettingDependency.h"
 #include "threads/SharedSection.h"
 
@@ -38,9 +39,6 @@ class CSettingUpdate;
 
 class TiXmlElement;
 class TiXmlNode;
-
-typedef void (*IntegerSettingOptionsFiller)(const CSetting *setting, std::vector< std::pair<std::string, int> > &list, int &current);
-typedef void (*StringSettingOptionsFiller)(const CSetting *setting, std::vector< std::pair<std::string, std::string> > &list, std::string &current);
 
 /*!
  \ingroup settings
@@ -59,10 +57,10 @@ public:
   virtual ~CSettingsManager();
 
   // implementation of ISettingCreator
-  virtual CSetting* CreateSetting(const std::string &settingType, const std::string &settingId, CSettingsManager *settingsManager = NULL) const;
+  virtual CSetting* CreateSetting(const std::string &settingType, const std::string &settingId, CSettingsManager *settingsManager = NULL) const override;
 
   // implementation of ISettingControlCreator
-  virtual ISettingControl* CreateControl(const std::string &controlType) const;
+  virtual ISettingControl* CreateControl(const std::string &controlType) const override;
 
   /*!
    \brief Initializes the settings manager using the setting definitions
@@ -88,7 +86,7 @@ public:
    \param root XML node
    \return True if the setting values were successfully saved, false otherwise
    */
-  virtual bool Save(TiXmlNode *root) const;
+  virtual bool Save(TiXmlNode *root) const override;
   /*!
    \brief Unloads the previously loaded setting values.
 
@@ -102,7 +100,17 @@ public:
    returns to the uninitialized state. Any registered callbacks or
    implementations stay registered.
    */
-  void Clear();
+  void Clear() override;
+
+  /*!
+  \brief Loads the setting being represented by the given XML node with the
+  given identifier.
+
+  \param node XML node representing the setting to load
+  \param settingId Setting identifier
+  \return True if the setting was successfully loaded from the given XML node, false otherwise
+  */
+  bool LoadSetting(const TiXmlNode *node, const std::string &settingId);
 
   /*!
    \brief Loads the setting being represented by the given XML node with the
@@ -110,9 +118,10 @@ public:
 
    \param node XML node representing the setting to load
    \param settingId Setting identifier
+   \param updated Set to true if the setting's value was updated
    \return True if the setting was successfully loaded from the given XML node, false otherwise
    */
-  bool LoadSetting(const TiXmlNode *node, const std::string &settingId);
+  bool LoadSetting(const TiXmlNode *node, const std::string &settingId, bool &updated);
 
   /*!
    \brief Tells the settings system that the initialization is complete.
@@ -129,6 +138,8 @@ public:
    being executed.
    */
   void SetLoaded() { m_loaded = true; }
+
+  void AddSection(CSettingSection *section);
 
   /*!
    \brief Registers the given ISettingCallback implementation to be triggered
@@ -306,7 +317,7 @@ public:
    \param id Setting identifier
    \return List of values of the setting with the given identifier
    */
-  std::vector< boost::shared_ptr<CSetting> > GetList(const std::string &id) const;
+  std::vector< std::shared_ptr<CSetting> > GetList(const std::string &id) const;
 
   /*!
    \brief Sets the boolean value of the setting with the given identifier.
@@ -354,7 +365,7 @@ public:
    \param value Values to set
    \return True if setting the values was successful, false otherwise
    */
-  bool SetList(const std::string &id, const std::vector< boost::shared_ptr<CSetting> > &value);
+  bool SetList(const std::string &id, const std::vector< std::shared_ptr<CSetting> > &value);
 
   /*!
    \brief Gets the setting conditions manager used by the settings manager.
@@ -379,35 +390,36 @@ public:
 
    \param identifier Identifier of the dynamic condition
    \param condition Implementation of the dynamic condition
+   \param data Opaque data pointer, will be passed back to SettingConditionCheck function
    */
-  void AddCondition(const std::string &identifier, SettingConditionCheck condition);
+  void AddCondition(const std::string &identifier, SettingConditionCheck condition, void *data = NULL);
 
 private:
   // implementation of ISettingCallback
-  virtual bool OnSettingChanging(const CSetting *setting);
-  virtual void OnSettingChanged(const CSetting *setting);
-  virtual void OnSettingAction(const CSetting *setting);
-  virtual bool OnSettingUpdate(CSetting* &setting, const char *oldSettingId, const TiXmlNode *oldSettingNode);
-  virtual void OnSettingPropertyChanged(const CSetting *setting, const char *propertyName);
+  virtual bool OnSettingChanging(const CSetting *setting) override;
+  virtual void OnSettingChanged(const CSetting *setting) override;
+  virtual void OnSettingAction(const CSetting *setting) override;
+  virtual bool OnSettingUpdate(CSetting* &setting, const char *oldSettingId, const TiXmlNode *oldSettingNode) override;
+  virtual void OnSettingPropertyChanged(const CSetting *setting, const char *propertyName) override;
 
   // implementation of ISettingsHandler
-  virtual bool OnSettingsLoading();
-  virtual void OnSettingsLoaded();
-  virtual void OnSettingsUnloaded();
-  virtual bool OnSettingsSaving() const;
-  virtual void OnSettingsSaved() const;
-  virtual void OnSettingsCleared();
+  virtual bool OnSettingsLoading() override;
+  virtual void OnSettingsLoaded() override;
+  virtual void OnSettingsUnloaded() override;
+  virtual bool OnSettingsSaving() const override;
+  virtual void OnSettingsSaved() const override;
+  virtual void OnSettingsCleared() override;
 
   // implementation of ISubSettings
-  virtual bool Load(const TiXmlNode *settings);
+  virtual bool Load(const TiXmlNode *settings) override;
 
   bool Serialize(TiXmlNode *parent) const;
-  bool Deserialize(const TiXmlNode *node, std::map<std::string, CSetting*> *loadedSettings = NULL);
+  bool Deserialize(const TiXmlNode *node, bool &updated, std::map<std::string, CSetting*> *loadedSettings = NULL);
 
-  static bool LoadSetting(const TiXmlNode *node, CSetting *setting);
-  bool UpdateSettings(const TiXmlNode *root);
+  bool LoadSetting(const TiXmlNode *node, CSetting *setting, bool &updated);
   bool UpdateSetting(const TiXmlNode *node, CSetting *setting, const CSettingUpdate& update);
   void UpdateSettingByDependency(const std::string &settingId, const CSettingDependency &dependency);
+  void UpdateSettingByDependency(const std::string &settingId, SettingDependencyType dependencyType);
 
   typedef enum {
     SettingOptionsFillerTypeNone = 0,
@@ -421,6 +433,7 @@ private:
   typedef struct {
     CSetting *setting;
     SettingDependencyMap dependencies;
+    std::set<std::string> children;
     CallbackSet callbacks;
   } Setting;
 

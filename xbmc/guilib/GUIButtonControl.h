@@ -42,7 +42,7 @@ public:
   CGUIButtonControl(int parentID, int controlID,
                     float posX, float posY, float width, float height,
                     const CTextureInfo& textureFocus, const CTextureInfo& textureNoFocus,
-                    const CLabelInfo &label);
+                    const CLabelInfo &label, bool wrapMultiline = false);
 
   virtual ~CGUIButtonControl(void);
   virtual CGUIButtonControl *Clone() const { return new CGUIButtonControl(*this); };
@@ -63,13 +63,15 @@ public:
   void SetFocusActions(const CGUIAction& focusActions) { m_focusActions = focusActions; };
   void SetUnFocusActions(const CGUIAction& unfocusActions) { m_unfocusActions = unfocusActions; };
   const CLabelInfo& GetLabelInfo() const { return m_label.GetLabelInfo(); };
-  virtual CStdString GetLabel() const { return GetDescription(); };
-  virtual CStdString GetLabel2() const;
+  virtual std::string GetLabel() const { return GetDescription(); };
+  virtual std::string GetLabel2() const;
   void SetSelected(bool bSelected);
-  virtual CStdString GetDescription() const;
+  virtual std::string GetDescription() const;
+  virtual float GetWidth() const;
+  virtual void SetMinWidth(float minWidth);
   void SetAlpha(unsigned char alpha);
 
-  void PythonSetLabel(const CStdString &strFont, const std::string &strText, color_t textColor, color_t shadowColor, color_t focusedColor);
+  void PythonSetLabel(const std::string &strFont, const std::string &strText, color_t textColor, color_t shadowColor, color_t focusedColor);
   void PythonSetDisabledColor(color_t disabledColor);
 
   virtual void OnClick();
@@ -92,6 +94,9 @@ protected:
   CGUITexture m_imgNoFocus;
   unsigned int  m_focusCounter;
   unsigned char m_alpha;
+
+  float m_minWidth;
+  float m_maxWidth;
 
   CGUIInfoLabel  m_info;
   CGUIInfoLabel  m_info2;

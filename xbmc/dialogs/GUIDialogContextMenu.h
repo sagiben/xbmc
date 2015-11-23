@@ -20,7 +20,10 @@
  *
  */
 
+#include <utility>
+
 #include "guilib/GUIDialog.h"
+
 
 class CMediaSource;
 
@@ -75,7 +78,6 @@ enum CONTEXT_BUTTON { CONTEXT_BUTTON_CANCELLED = 0,
                       CONTEXT_BUTTON_INFO,
                       CONTEXT_BUTTON_INFO_ALL,
                       CONTEXT_BUTTON_CDDB,
-                      CONTEXT_BUTTON_REFRESH,
                       CONTEXT_BUTTON_SCAN,
                       CONTEXT_BUTTON_STOP_SCANNING,
                       CONTEXT_BUTTON_SET_ARTIST_THUMB,
@@ -103,7 +105,9 @@ enum CONTEXT_BUTTON { CONTEXT_BUTTON_CANCELLED = 0,
                       CONTEXT_BUTTON_ADD,
                       CONTEXT_BUTTON_ACTIVATE,
                       CONTEXT_BUTTON_START_RECORD,
+                      CONTEXT_BUTTON_ADD_TIMER,
                       CONTEXT_BUTTON_STOP_RECORD,
+                      CONTEXT_BUTTON_DELETE_TIMER,
                       CONTEXT_BUTTON_GROUP_MANAGER,
                       CONTEXT_BUTTON_CHANNEL_MANAGER,
                       CONTEXT_BUTTON_FILTER,
@@ -122,13 +126,17 @@ enum CONTEXT_BUTTON { CONTEXT_BUTTON_CANCELLED = 0,
                       CONTEXT_BUTTON_PLAY_AND_QUEUE,
                       CONTEXT_BUTTON_PLAY_ONLY_THIS,
                       CONTEXT_BUTTON_UPDATE_EPG,
-                      CONTEXT_BUTTON_RECORD_ITEM,
                       CONTEXT_BUTTON_TAGS_ADD_ITEMS,
                       CONTEXT_BUTTON_TAGS_REMOVE_ITEMS,
                       CONTEXT_BUTTON_SET_MOVIESET,
                       CONTEXT_BUTTON_MOVIESET_ADD_REMOVE_ITEMS,
                       CONTEXT_BUTTON_BROWSE_INTO,
                       CONTEXT_BUTTON_EDIT_SORTTITLE,
+                      CONTEXT_BUTTON_UNDELETE,
+                      CONTEXT_BUTTON_DELETE_ALL,
+                      CONTEXT_BUTTON_HELP,
+                      CONTEXT_BUTTON_ACTIVE_ADSP_SETTINGS,
+                      CONTEXT_BUTTON_CHECK_FOR_UPDATES,
                       CONTEXT_BUTTON_USER1,
                       CONTEXT_BUTTON_USER2,
                       CONTEXT_BUTTON_USER3,
@@ -138,13 +146,17 @@ enum CONTEXT_BUTTON { CONTEXT_BUTTON_CANCELLED = 0,
                       CONTEXT_BUTTON_USER7,
                       CONTEXT_BUTTON_USER8,
                       CONTEXT_BUTTON_USER9,
-                      CONTEXT_BUTTON_USER10
+                      CONTEXT_BUTTON_USER10,
+
+                      //NOTE: this has to be the last in this enum,
+                      //because this one, and the ones higher will be used by context addons
+                      CONTEXT_BUTTON_FIRST_ADDON
                     };
 
-class CContextButtons : public std::vector< std::pair<unsigned int, CStdString> >
+class CContextButtons : public std::vector< std::pair<unsigned int, std::string> >
 {
 public:
-  void Add(unsigned int, const CStdString &label);
+  void Add(unsigned int, const std::string &label);
   void Add(unsigned int, int label);
 };
 
@@ -158,11 +170,11 @@ public:
   virtual bool OnAction(const CAction& action);
   virtual void SetPosition(float posX, float posY);
 
-  static bool SourcesMenu(const CStdString &strType, const CFileItemPtr item, float posX, float posY);
-  static void SwitchMedia(const CStdString& strType, const CStdString& strPath);
+  static bool SourcesMenu(const std::string &strType, const CFileItemPtr& item, float posX, float posY);
+  static void SwitchMedia(const std::string& strType, const std::string& strPath);
 
-  static void GetContextButtons(const CStdString &type, const CFileItemPtr item, CContextButtons &buttons);
-  static bool OnContextButton(const CStdString &type, const CFileItemPtr item, CONTEXT_BUTTON button);
+  static void GetContextButtons(const std::string &type, const CFileItemPtr& item, CContextButtons &buttons);
+  static bool OnContextButton(const std::string &type, const CFileItemPtr& item, CONTEXT_BUTTON button);
 
   /*! \brief Show the context menu with the given choices
    \param choices the choices available for the user.
@@ -183,10 +195,10 @@ protected:
   virtual void OnInitWindow();
   virtual void OnWindowLoaded();
   virtual void OnDeinitWindow(int nextWindowID);
-  static CStdString GetDefaultShareNameByType(const CStdString &strType);
-  static void SetDefault(const CStdString &strType, const CStdString &strDefault);
-  static void ClearDefault(const CStdString &strType);
-  static CMediaSource *GetShare(const CStdString &type, const CFileItem *item);
+  static std::string GetDefaultShareNameByType(const std::string &strType);
+  static void SetDefault(const std::string &strType, const std::string &strDefault);
+  static void ClearDefault(const std::string &strType);
+  static CMediaSource *GetShare(const std::string &type, const CFileItem *item);
 
 private:
   float m_coordX, m_coordY;

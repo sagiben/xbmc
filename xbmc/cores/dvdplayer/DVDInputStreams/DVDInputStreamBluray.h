@@ -22,7 +22,7 @@
 
 #include "DVDInputStream.h"
 #include <list>
-#include <boost/shared_ptr.hpp>
+#include <memory>
 
 extern "C"
 {
@@ -30,7 +30,10 @@ extern "C"
 #include <libbluray/bluray-version.h>
 #include <libbluray/keys.h>
 #include <libbluray/overlay.h>
+#include <libbluray/player_settings.h>
 }
+
+#define MAX_PLAYLIST_ID 99999
 
 class CDVDOverlayImage;
 class DllLibbluray;
@@ -46,11 +49,12 @@ class CDVDInputStreamBluray
 public:
   CDVDInputStreamBluray(IDVDPlayer* player);
   virtual ~CDVDInputStreamBluray();
-  virtual bool Open(const char* strFile, const std::string &content);
+  virtual bool Open(const char* strFile, const std::string &content, bool contentLookup);
   virtual void Close();
   virtual int Read(uint8_t* buf, int buf_size);
   virtual int64_t Seek(int64_t offset, int whence);
   virtual bool Pause(double dTime) { return false; };
+  void Abort();
   virtual bool IsEOF();
   virtual int64_t GetLength();
   virtual int GetBlockSize() { return 6144; }
@@ -80,8 +84,8 @@ public:
   virtual void OnPrevious()              {}
   virtual bool HasMenu();
   virtual bool IsInMenu();
-  virtual bool OnMouseMove(const CPoint &point)  { return false; }
-  virtual bool OnMouseClick(const CPoint &point) { return false; }
+  virtual bool OnMouseMove(const CPoint &point)  { return MouseMove(point); }
+  virtual bool OnMouseClick(const CPoint &point) { return MouseClick(point); }
   virtual double GetTimeStampCorrection()        { return 0.0; }
   virtual void SkipStill();
   virtual bool GetState(std::string &xmlstate)         { return false; }
@@ -89,10 +93,13 @@ public:
 
 
   void UserInput(bd_vk_key_e vk);
+  bool MouseMove(const CPoint &point);
+  bool MouseClick(const CPoint &point);
 
   int GetChapter();
   int GetChapterCount();
-  void GetChapterName(std::string& name) {};
+  void GetChapterName(std::string& name, int ch=-1) {};
+  int64_t GetChapterPos(int ch);
   bool SeekChapter(int ch);
 
   int GetTotalTime();
@@ -129,7 +136,7 @@ protected:
   bool                m_menu;
   bool                m_navmode;
 
-  typedef boost::shared_ptr<CDVDOverlayImage> SOverlay;
+  typedef std::shared_ptr<CDVDOverlayImage> SOverlay;
   typedef std::list<SOverlay>                 SOverlays;
 
   struct SPlane
@@ -150,10 +157,14 @@ protected:
     HOLD_HELD,
     HOLD_DATA,
     HOLD_STILL,
-    HOLD_ERROR
+    HOLD_ERROR,
+    HOLD_EXIT
   } m_hold;
   BD_EVENT m_event;
 #ifdef HAVE_LIBBLURAY_BDJ
   struct bd_argb_buffer_s m_argb;
 #endif
+
+  private:
+    void SetupPlayerSettings();
 };

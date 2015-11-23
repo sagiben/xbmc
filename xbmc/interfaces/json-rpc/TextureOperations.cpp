@@ -21,10 +21,11 @@
 #include "TextureOperations.h"
 #include "TextureDatabase.h"
 #include "TextureCache.h"
+#include "utils/Variant.h"
 
 using namespace JSONRPC;
 
-JSONRPC_STATUS CTextureOperations::GetTextures(const CStdString &method, ITransportLayer *transport, IClient *client, const CVariant &parameterObject, CVariant &result)
+JSONRPC_STATUS CTextureOperations::GetTextures(const std::string &method, ITransportLayer *transport, IClient *client, const CVariant &parameterObject, CVariant &result)
 {
   CFileItemList listItems;
 
@@ -92,11 +93,11 @@ JSONRPC_STATUS CTextureOperations::GetTextures(const CStdString &method, ITransp
   return OK;
 }
 
-JSONRPC_STATUS CTextureOperations::RemoveTexture(const CStdString &method, ITransportLayer *transport, IClient *client, const CVariant &parameterObject, CVariant &result)
+JSONRPC_STATUS CTextureOperations::RemoveTexture(const std::string &method, ITransportLayer *transport, IClient *client, const CVariant &parameterObject, CVariant &result)
 {
   int id = (int)parameterObject["textureid"].asInteger();
 
-  if (!CTextureCache::Get().ClearCachedImage(id))
+  if (!CTextureCache::GetInstance().ClearCachedImage(id))
     return InvalidParams;
 
   return ACK;

@@ -18,23 +18,20 @@
  *  <http://www.gnu.org/licenses/>.
  *
  */
-%>
-<%
     List templateArgs = swigTypeParser.SwigType_templateparmlist(type)
     vectype = templateArgs[0]
     boolean ispointer = swigTypeParser.SwigType_ispointer(type)
     String accessor = ispointer ? '->' : '.'
     seq = sequence.increment()
-%>
 
-    ${result} = PyList_New(0);
-<%
     if (ispointer)
     {
 %>
     if (${api} != NULL)
     { 
 <%  }  %>
+      ${result} = PyList_New(0);
+
       for (std::vector<${swigTypeParser.SwigType_str(vectype)}>::iterator iter = ${api}${accessor}begin(); iter != ${api}${accessor}end(); ++iter)
       {
         ${swigTypeParser.SwigType_str(swigTypeParser.SwigType_ltype(vectype))}& entry${seq} = *iter;

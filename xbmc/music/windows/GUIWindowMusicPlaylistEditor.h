@@ -24,7 +24,7 @@
 
 class CFileItemList;
 
-class CGUIWindowMusicPlaylistEditor : public CGUIWindowMusicBase, public IBackgroundLoaderObserver
+class CGUIWindowMusicPlaylistEditor : public CGUIWindowMusicBase
 {
 public:
   CGUIWindowMusicPlaylistEditor(void);
@@ -34,15 +34,14 @@ public:
   virtual bool OnBack(int actionID);
 
 protected:
-  virtual void OnItemLoaded(CFileItem* pItem) {};
-  virtual bool GetDirectory(const CStdString &strDirectory, CFileItemList &items);
+  virtual bool GetDirectory(const std::string &strDirectory, CFileItemList &items);
   virtual void UpdateButtons();
-  virtual bool Update(const CStdString &strDirectory, bool updateFilterPath = true);
+  virtual bool Update(const std::string &strDirectory, bool updateFilterPath = true);
   virtual void OnPrepareFileItems(CFileItemList &items);
   virtual void GetContextButtons(int itemNumber, CContextButtons &buttons);
   virtual bool OnContextButton(int itemNumber, CONTEXT_BUTTON button);
   virtual void OnQueueItem(int iItem);
-  virtual CStdString GetStartFolder(const CStdString &dir) { return ""; };
+  virtual std::string GetStartFolder(const std::string &dir) { return ""; };
 
   void OnPlaylistContext();
   int GetCurrentPlaylistItem();
@@ -54,16 +53,15 @@ protected:
   void AppendToPlaylist(CFileItemList &newItems);
   void OnMovePlaylistItem(int item, int direction);
 
-  void LoadPlaylist(const CStdString &playlist);
+  void LoadPlaylist(const std::string &playlist);
 
   // new method
   virtual void PlayItem(int iItem);
 
   void DeleteRemoveableMediaDirectoryCache();
 
-  CMusicThumbLoader m_thumbLoader;
   CMusicThumbLoader m_playlistThumbLoader;
 
   CFileItemList* m_playlist;
-  CStdString m_strLoadedPlaylist;
+  std::string m_strLoadedPlaylist;
 };

@@ -19,10 +19,11 @@
  *
  */
 
-#include "system.h"
 #include "bus/PeripheralBus.h"
 #include "devices/Peripheral.h"
+#include "messaging/IMessageTarget.h"
 #include "settings/lib/ISettingCallback.h"
+#include "system.h"
 #include "threads/CriticalSection.h"
 #include "threads/Thread.h"
 #include "utils/Observer.h"
@@ -36,13 +37,14 @@ class CKey;
 
 namespace PERIPHERALS
 {
-  #define g_peripherals CPeripherals::Get()
+  #define g_peripherals CPeripherals::GetInstance()
 
   class CPeripherals :  public ISettingCallback,
-                        public Observable
+                        public Observable,
+                        public KODI::MESSAGING::IMessageTarget
   {
   public:
-    static CPeripherals &Get(void);
+    static CPeripherals &GetInstance();
     virtual ~CPeripherals(void);
 
     /*!
@@ -61,7 +63,7 @@ namespace PERIPHERALS
      * @param busType The bus to query. Default (PERIPHERAL_BUS_UNKNOWN) searches all busses.
      * @return The peripheral or NULL if it wasn't found.
      */
-    virtual CPeripheral *GetPeripheralAtLocation(const CStdString &strLocation, PeripheralBusType busType = PERIPHERAL_BUS_UNKNOWN) const;
+    virtual CPeripheral *GetPeripheralAtLocation(const std::string &strLocation, PeripheralBusType busType = PERIPHERAL_BUS_UNKNOWN) const;
 
     /*!
      * @brief Check whether a peripheral is present at the given location.
@@ -69,14 +71,14 @@ namespace PERIPHERALS
      * @param busType The bus to query. Default (PERIPHERAL_BUS_UNKNOWN) searches all busses.
      * @return True when a peripheral was found, false otherwise.
      */
-    virtual bool HasPeripheralAtLocation(const CStdString &strLocation, PeripheralBusType busType = PERIPHERAL_BUS_UNKNOWN) const;
+    virtual bool HasPeripheralAtLocation(const std::string &strLocation, PeripheralBusType busType = PERIPHERAL_BUS_UNKNOWN) const;
 
     /*!
      * @brief Get the bus that holds the device with the given location.
      * @param strLocation The location.
      * @return The bus or NULL if no device was found.
      */
-    virtual CPeripheralBus *GetBusWithDevice(const CStdString &strLocation) const;
+    virtual CPeripheralBus *GetBusWithDevice(const std::string &strLocation) const;
 
     /*!
      * @brief Get all peripheral instances that have the given feature.
@@ -142,14 +144,14 @@ namespace PERIPHERALS
      * @param strPath The path to the directory to get the items from.
      * @param items The item list.
      */
-    virtual void GetDirectory(const CStdString &strPath, CFileItemList &items) const;
+    virtual void GetDirectory(const std::string &strPath, CFileItemList &items) const;
 
     /*!
      * @brief Get the instance of a peripheral given it's path.
      * @param strPath The path to the peripheral.
      * @return The peripheral or NULL if it wasn't found.
      */
-    virtual CPeripheral *GetByPath(const CStdString &strPath) const;
+    virtual CPeripheral *GetByPath(const std::string &strPath) const;
 
     /*!
      * @brief Try to let one of the peripherals handle an action.
@@ -207,14 +209,19 @@ namespace PERIPHERALS
 #endif
     }
     
-    virtual void OnSettingChanged(const CSetting *setting);
-    virtual void OnSettingAction(const CSetting *setting);
+    virtual void OnSettingChanged(const CSetting *setting) override;
+    virtual void OnSettingAction(const CSetting *setting) override;
+
+    virtual void OnApplicationMessage(KODI::MESSAGING::ThreadMessage* pMsg) override;
+    virtual int GetMessageMask() override;
 
   private:
     CPeripherals(void);
     bool LoadMappings(void);
     bool GetMappingForDevice(const CPeripheralBus &bus, PeripheralScanResult& result) const;
-    static void GetSettingsFromMappingsFile(TiXmlElement *xmlNode, std::map<CStdString, PeripheralDeviceSetting> &m_settings);
+    static void GetSettingsFromMappingsFile(TiXmlElement *xmlNode, std::map<std::string, PeripheralDeviceSetting> &m_settings);
+
+    void OnDeviceChanged();
 
     bool                                 m_bInitialised;
     bool                                 m_bIsStarted;

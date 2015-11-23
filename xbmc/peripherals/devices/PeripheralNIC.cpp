@@ -19,11 +19,9 @@
  */
 
 #include "PeripheralNIC.h"
-#include "utils/log.h"
 #include "guilib/LocalizeStrings.h"
 
 using namespace PERIPHERALS;
-using namespace std;
 
 CPeripheralNIC::CPeripheralNIC(const PeripheralScanResult& scanResult) :
   CPeripheral(scanResult)

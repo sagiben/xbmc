@@ -25,8 +25,10 @@
  *
  */
 
-#include "IGUIContainer.h"
+#include <utility>
+
 #include "GUIListItemLayout.h"
+#include "IGUIContainer.h"
 #include "utils/Stopwatch.h"
 
 /*!
@@ -62,7 +64,7 @@ public:
 
   void SetPageControl(int id);
 
-  virtual CStdString GetDescription() const;
+  virtual std::string GetDescription() const;
   virtual void SaveStates(std::vector<CControlState> &states);
   virtual int GetSelectedItem() const;
 
@@ -75,7 +77,7 @@ public:
   virtual CGUIListItemPtr GetListItem(int offset, unsigned int flag = 0) const;
 
   virtual bool GetCondition(int condition, int data) const;
-  virtual CStdString GetLabel(int info) const;
+  virtual std::string GetLabel(int info) const;
 
   /*! \brief Set the list provider for this container (for python).
    \param provider the list provider to use for this container.
@@ -88,6 +90,10 @@ public:
    \param offset CPoint holding the offset in skin coordinates.
    */
   void SetRenderOffset(const CPoint &offset);
+
+  void SetClickActions(const CGUIAction& clickActions) { m_clickActions = clickActions; };
+  void SetFocusActions(const CGUIAction& focusActions) { m_focusActions = focusActions; };
+  void SetUnFocusActions(const CGUIAction& unfocusActions) { m_unfocusActions = unfocusActions; };
 
   void SetAutoScrolling(const TiXmlNode *node);
   void ResetAutoScrolling();
@@ -122,6 +128,7 @@ protected:
   virtual int GetCurrentPage() const;
   bool InsideLayout(const CGUIListItemLayout *layout, const CPoint &point) const;
   virtual void OnFocus();
+  virtual void OnUnFocus();
   void UpdateListProvider(bool forceRefresh = false);
 
   int ScrollCorrectionRange() const;
@@ -173,7 +180,7 @@ protected:
   void OnPrevLetter();
   void OnJumpLetter(char letter, bool skip = false);
   void OnJumpSMS(int letter);
-  std::vector< std::pair<int, CStdString> > m_letterOffsets;
+  std::vector< std::pair<int, std::string> > m_letterOffsets;
 
   /*! \brief Set the cursor position
    Should be used by all base classes rather than directly setting it, as
@@ -214,9 +221,13 @@ private:
   CStopWatch m_lastScrollStartTimer;
   CStopWatch m_pageChangeTimer;
 
+  CGUIAction m_clickActions;
+  CGUIAction m_focusActions;
+  CGUIAction m_unfocusActions;
+
   // letter match searching
   CStopWatch m_matchTimer;
-  CStdString m_match;
+  std::string m_match;
   float m_scrollItemsPerFrame;
 
   static const int letter_match_timeout = 1000;

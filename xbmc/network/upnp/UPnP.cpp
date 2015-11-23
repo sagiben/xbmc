@@ -22,6 +22,9 @@
  *
  */
 
+#include <set>
+#include <Platinum/Source/Platinum/Platinum.h>
+
 #include "threads/SystemClock.h"
 #include "UPnP.h"
 #include "UPnPInternal.h"
@@ -30,24 +33,24 @@
 #include "UPnPSettings.h"
 #include "utils/URIUtils.h"
 #include "Application.h"
-#include "ApplicationMessenger.h"
+#include "messaging/ApplicationMessenger.h"
 #include "network/Network.h"
 #include "utils/log.h"
-#include "Platinum.h"
 #include "URL.h"
 #include "profiles/ProfilesManager.h"
+#include "settings/AdvancedSettings.h"
 #include "settings/Settings.h"
 #include "GUIUserMessages.h"
 #include "FileItem.h"
 #include "guilib/GUIWindowManager.h"
-#include "GUIInfoManager.h"
 #include "utils/TimeUtils.h"
 #include "video/VideoInfoTag.h"
-#include "guilib/Key.h"
+#include "input/Key.h"
 #include "Util.h"
+#include "utils/SystemInfo.h"
 
-using namespace std;
 using namespace UPNP;
+using namespace KODI::MESSAGING;
 
 NPT_SET_LOCAL_LOGGER("xbmc.upnp")
 
@@ -96,9 +99,31 @@ DLNA_ORG_FLAGS_VAL = '01500000000000000000000000000000'
 |   NPT_Console::Output
 +---------------------------------------------------------------------*/
 void
-NPT_Console::Output(const char* message)
+NPT_Console::Output(const char* msg) { }
+
+int ConvertLogLevel(int nptLogLevel)
 {
-    CLog::Log(LOGDEBUG, "%s", message);
+    if (nptLogLevel >= NPT_LOG_LEVEL_FATAL)
+        return LOGFATAL;
+    if (nptLogLevel >= NPT_LOG_LEVEL_SEVERE)
+        return LOGERROR;
+    if (nptLogLevel >= NPT_LOG_LEVEL_WARNING)
+        return LOGWARNING;
+    if (nptLogLevel >= NPT_LOG_LEVEL_INFO)
+        return LOGNOTICE;
+    if (nptLogLevel >= NPT_LOG_LEVEL_FINE)
+        return LOGINFO;
+
+    return LOGDEBUG;
+}
+
+void
+UPnPLogger(const NPT_LogRecord* record)
+{
+    if (!g_advancedSettings.CanLogComponent(LOGUPNP))
+        return;
+
+    CLog::Log(ConvertLogLevel(record->m_Level), "Platinum [%s]: %s", record->m_LoggerName, record->m_Message);
 }
 
 namespace UPNP
@@ -183,7 +208,7 @@ public:
     {
         NPT_String path = "upnp://"+device->GetUUID()+"/";
         if (!NPT_StringsEqual(item_id, "0")) {
-            CStdString id(CURL::Encode(item_id));
+            std::string id(CURL::Encode(item_id));
             URIUtils::AddSlashAtEnd(id);
             path += id.c_str();
         }
@@ -209,7 +234,7 @@ public:
 
     bool SaveFileState(const CFileItem& item, const CBookmark& bookmark, const bool updatePlayCount)
     {
-        string path = item.GetProperty("original_listitem_url").asString();
+        std::string path = item.GetProperty("original_listitem_url").asString();
         if (!item.HasVideoInfoTag() || path.empty())  {
           return false;
         }
@@ -287,6 +312,9 @@ public:
 
   ~CMediaController()
   {
+    for (std::set<std::string>::const_iterator itRenderer = m_registeredRenderers.begin(); itRenderer != m_registeredRenderers.end(); ++itRenderer)
+      unregisterRenderer(*itRenderer);
+    m_registeredRenderers.clear();
   }
 
 #define CHECK_USERDATA_RETURN(userdata) do {     \
@@ -351,16 +379,33 @@ public:
 
   virtual bool OnMRAdded(PLT_DeviceDataReference& device )
   {
-    CPlayerCoreFactory::Get().OnPlayerDiscovered((const char*)device->GetUUID()
+    if (device->GetUUID().IsEmpty() || device->GetUUID().GetChars() == NULL)
+      return false;
+
+    CPlayerCoreFactory::GetInstance().OnPlayerDiscovered((const char*)device->GetUUID()
                                           ,(const char*)device->GetFriendlyName()
                                           , EPC_UPNPPLAYER);
+    m_registeredRenderers.insert(std::string(device->GetUUID().GetChars()));
     return true;
   }
 
   virtual void OnMRRemoved(PLT_DeviceDataReference& device )
   {
-    CPlayerCoreFactory::Get().OnPlayerRemoved((const char*)device->GetUUID());
+    if (device->GetUUID().IsEmpty() || device->GetUUID().GetChars() == NULL)
+      return;
+
+    std::string uuid(device->GetUUID().GetChars());
+    unregisterRenderer(uuid);
+    m_registeredRenderers.erase(uuid);
   }
+
+private:
+  void unregisterRenderer(const std::string &deviceUUID)
+  {
+    CPlayerCoreFactory::GetInstance().OnPlayerRemoved(deviceUUID);
+  }
+
+  std::set<std::string> m_registeredRenderers;
 };
 
 /*----------------------------------------------------------------------
@@ -369,10 +414,15 @@ public:
 CUPnP::CUPnP() :
     m_MediaBrowser(NULL),
     m_MediaController(NULL),
+    m_LogHandler(NULL),
     m_ServerHolder(new CDeviceHostReferenceHolder()),
     m_RendererHolder(new CRendererReferenceHolder()),
     m_CtrlPointHolder(new CCtrlPointReferenceHolder())
 {
+    NPT_LogManager::GetDefault().Configure("plist:.level=FINE;.handlers=CustomHandler;");
+    NPT_LogHandler::Create("CustomHandler", "xbmc", m_LogHandler);
+    m_LogHandler->SetCustomHandlerFunction(&UPnPLogger);
+
     // initialize upnp context
     m_UPnP = new PLT_UPnP();
 
@@ -398,9 +448,11 @@ CUPnP::~CUPnP()
 {
     m_UPnP->Stop();
     StopClient();
+    StopController();
     StopServer();
 
     delete m_UPnP;
+    delete m_LogHandler;
     delete m_ServerHolder;
     delete m_RendererHolder;
     delete m_CtrlPointHolder;
@@ -441,7 +493,7 @@ CUPnP::ReleaseInstance(bool bWait)
 }
 
 /*----------------------------------------------------------------------
-|   CUPnP::StartServer
+|   CUPnP::GetServer
 +---------------------------------------------------------------------*/
 CUPnPServer* CUPnP::GetServer()
 {
@@ -479,26 +531,47 @@ CUPnP::SaveFileState(const CFileItem& item, const CBookmark& bookmark, const boo
 }
 
 /*----------------------------------------------------------------------
-|   CUPnP::StartClient
+|   CUPnP::CreateControlPoint
 +---------------------------------------------------------------------*/
 void
-CUPnP::StartClient()
+CUPnP::CreateControlPoint()
 {
-    if (!m_CtrlPointHolder->m_CtrlPoint.IsNull()) return;
+    if (!m_CtrlPointHolder->m_CtrlPoint.IsNull())
+        return;
 
     // create controlpoint
     m_CtrlPointHolder->m_CtrlPoint = new PLT_CtrlPoint();
 
     // start it
     m_UPnP->AddCtrlPoint(m_CtrlPointHolder->m_CtrlPoint);
+}
+
+/*----------------------------------------------------------------------
+|   CUPnP::DestroyControlPoint
++---------------------------------------------------------------------*/
+void
+CUPnP::DestroyControlPoint()
+{
+    if (m_CtrlPointHolder->m_CtrlPoint.IsNull())
+        return;
+
+    m_UPnP->RemoveCtrlPoint(m_CtrlPointHolder->m_CtrlPoint);
+    m_CtrlPointHolder->m_CtrlPoint = NULL;
+}
+
+/*----------------------------------------------------------------------
+|   CUPnP::StartClient
++---------------------------------------------------------------------*/
+void
+CUPnP::StartClient()
+{
+    if (m_MediaBrowser != NULL)
+        return;
+
+    CreateControlPoint();
 
     // start browser
     m_MediaBrowser = new CMediaBrowser(m_CtrlPointHolder->m_CtrlPoint);
-
-    // start controller
-    if (CSettings::Get().GetBool("services.upnpcontroller")) {
-        m_MediaController = new CMediaController(m_CtrlPointHolder->m_CtrlPoint);
-    }
 }
 
 /*----------------------------------------------------------------------
@@ -507,15 +580,44 @@ CUPnP::StartClient()
 void
 CUPnP::StopClient()
 {
-    if (m_CtrlPointHolder->m_CtrlPoint.IsNull()) return;
-
-    m_UPnP->RemoveCtrlPoint(m_CtrlPointHolder->m_CtrlPoint);
-    m_CtrlPointHolder->m_CtrlPoint = NULL;
+    if (m_MediaBrowser == NULL)
+        return;
 
     delete m_MediaBrowser;
     m_MediaBrowser = NULL;
-    delete m_MediaController;
-    m_MediaController = NULL;
+
+    if (!IsControllerStarted())
+        DestroyControlPoint();
+}
+
+/*----------------------------------------------------------------------
+|   CUPnP::StartController
++---------------------------------------------------------------------*/
+void
+CUPnP::StartController()
+{
+    if (m_MediaController != NULL)
+        return;
+
+    CreateControlPoint();
+
+    m_MediaController = new CMediaController(m_CtrlPointHolder->m_CtrlPoint);
+}
+
+/*----------------------------------------------------------------------
+|   CUPnP::StopController
++---------------------------------------------------------------------*/
+void
+CUPnP::StopController()
+{
+  if (m_MediaController == NULL)
+      return;
+
+  delete m_MediaController;
+  m_MediaController = NULL;
+
+  if (!IsClientStarted())
+      DestroyControlPoint();
 }
 
 /*----------------------------------------------------------------------
@@ -525,23 +627,23 @@ CUPnPServer*
 CUPnP::CreateServer(int port /* = 0 */)
 {
     CUPnPServer* device =
-        new CUPnPServer(g_infoManager.GetLabel(SYSTEM_FRIENDLY_NAME),
-                        CUPnPSettings::Get().GetServerUUID().length() ? CUPnPSettings::Get().GetServerUUID().c_str() : NULL,
+        new CUPnPServer(CSysInfo::GetDeviceName().c_str(),
+                        CUPnPSettings::GetInstance().GetServerUUID().length() ? CUPnPSettings::GetInstance().GetServerUUID().c_str() : NULL,
                         port);
 
     // trying to set optional upnp values for XP UPnP UI Icons to detect us
     // but it doesn't work anyways as it requires multicast for XP to detect us
     device->m_PresentationURL =
-        NPT_HttpUrl(m_IP,
-                    CSettings::Get().GetInt("services.webserverport"),
+        NPT_HttpUrl(m_IP.c_str(),
+                    CSettings::GetInstance().GetInt(CSettings::SETTING_SERVICES_WEBSERVERPORT),
                     "/").ToString();
 
-    device->m_ModelName        = "XBMC Media Center";
-    device->m_ModelNumber      = g_infoManager.GetVersion().c_str();
-    device->m_ModelDescription = "XBMC Media Center - Media Server";
-    device->m_ModelURL         = "http://xbmc.org/";
-    device->m_Manufacturer     = "Team XBMC";
-    device->m_ManufacturerURL  = "http://xbmc.org/";
+    device->m_ModelName        = "Kodi";
+    device->m_ModelNumber      = CSysInfo::GetVersion().c_str();
+    device->m_ModelDescription = "Kodi - Media Server";
+    device->m_ModelURL         = "http://kodi.tv/";
+    device->m_Manufacturer     = "XBMC Foundation";
+    device->m_ManufacturerURL  = "http://kodi.tv/";
 
     device->SetDelegate(device);
     return device;
@@ -556,38 +658,38 @@ CUPnP::StartServer()
     if (!m_ServerHolder->m_Device.IsNull()) return false;
 
     // load upnpserver.xml
-    CStdString filename = URIUtils::AddFileToFolder(CProfilesManager::Get().GetUserDataFolder(), "upnpserver.xml");
-    CUPnPSettings::Get().Load(filename);
+    std::string filename = URIUtils::AddFileToFolder(CProfilesManager::GetInstance().GetUserDataFolder(), "upnpserver.xml");
+    CUPnPSettings::GetInstance().Load(filename);
 
     // create the server with a XBox compatible friendlyname and UUID from upnpserver.xml if found
-    m_ServerHolder->m_Device = CreateServer(CUPnPSettings::Get().GetServerPort());
+    m_ServerHolder->m_Device = CreateServer(CUPnPSettings::GetInstance().GetServerPort());
 
     // start server
     NPT_Result res = m_UPnP->AddDevice(m_ServerHolder->m_Device);
     if (NPT_FAILED(res)) {
         // if the upnp device port was not 0, it could have failed because
         // of port being in used, so restart with a random port
-        if (CUPnPSettings::Get().GetServerPort() > 0) m_ServerHolder->m_Device = CreateServer(0);
+        if (CUPnPSettings::GetInstance().GetServerPort() > 0) m_ServerHolder->m_Device = CreateServer(0);
 
         res = m_UPnP->AddDevice(m_ServerHolder->m_Device);
     }
 
     // save port but don't overwrite saved settings if port was random
     if (NPT_SUCCEEDED(res)) {
-        if (CUPnPSettings::Get().GetServerPort() == 0) {
-            CUPnPSettings::Get().SetServerPort(m_ServerHolder->m_Device->GetPort());
+        if (CUPnPSettings::GetInstance().GetServerPort() == 0) {
+            CUPnPSettings::GetInstance().SetServerPort(m_ServerHolder->m_Device->GetPort());
         }
         CUPnPServer::m_MaxReturnedItems = UPNP_DEFAULT_MAX_RETURNED_ITEMS;
-        if (CUPnPSettings::Get().GetMaximumReturnedItems() > 0) {
+        if (CUPnPSettings::GetInstance().GetMaximumReturnedItems() > 0) {
             // must be > UPNP_DEFAULT_MIN_RETURNED_ITEMS
-            CUPnPServer::m_MaxReturnedItems = max(UPNP_DEFAULT_MIN_RETURNED_ITEMS, CUPnPSettings::Get().GetMaximumReturnedItems());
+            CUPnPServer::m_MaxReturnedItems = std::max(UPNP_DEFAULT_MIN_RETURNED_ITEMS, CUPnPSettings::GetInstance().GetMaximumReturnedItems());
         }
-        CUPnPSettings::Get().SetMaximumReturnedItems(CUPnPServer::m_MaxReturnedItems);
+        CUPnPSettings::GetInstance().SetMaximumReturnedItems(CUPnPServer::m_MaxReturnedItems);
     }
 
     // save UUID
-    CUPnPSettings::Get().SetServerUUID(m_ServerHolder->m_Device->GetUUID().GetChars());
-    return CUPnPSettings::Get().Save(filename);
+    CUPnPSettings::GetInstance().SetServerUUID(m_ServerHolder->m_Device->GetUUID().GetChars());
+    return CUPnPSettings::GetInstance().Save(filename);
 }
 
 /*----------------------------------------------------------------------
@@ -609,21 +711,21 @@ CUPnPRenderer*
 CUPnP::CreateRenderer(int port /* = 0 */)
 {
     CUPnPRenderer* device =
-        new CUPnPRenderer(g_infoManager.GetLabel(SYSTEM_FRIENDLY_NAME),
+        new CUPnPRenderer(CSysInfo::GetDeviceName().c_str(),
                           false,
-                          (CUPnPSettings::Get().GetRendererUUID().length() ? CUPnPSettings::Get().GetRendererUUID().c_str() : NULL),
+                          (CUPnPSettings::GetInstance().GetRendererUUID().length() ? CUPnPSettings::GetInstance().GetRendererUUID().c_str() : NULL),
                           port);
 
     device->m_PresentationURL =
-        NPT_HttpUrl(m_IP,
-                    CSettings::Get().GetInt("services.webserverport"),
+        NPT_HttpUrl(m_IP.c_str(),
+                    CSettings::GetInstance().GetInt(CSettings::SETTING_SERVICES_WEBSERVERPORT),
                     "/").ToString();
-    device->m_ModelName        = "XBMC Media Center";
-    device->m_ModelNumber      = g_infoManager.GetVersion().c_str();
-    device->m_ModelDescription = "XBMC Media Center - Media Renderer";
-    device->m_ModelURL         = "http://xbmc.org/";
-    device->m_Manufacturer     = "Team XBMC";
-    device->m_ManufacturerURL  = "http://xbmc.org/";
+    device->m_ModelName        = "Kodi";
+    device->m_ModelNumber      = CSysInfo::GetVersion().c_str();
+    device->m_ModelDescription = "Kodi - Media Renderer";
+    device->m_ModelURL         = "http://kodi.tv/";
+    device->m_Manufacturer     = "XBMC Foundation";
+    device->m_ManufacturerURL  = "http://kodi.tv/";
 
     return device;
 }
@@ -635,28 +737,28 @@ bool CUPnP::StartRenderer()
 {
     if (!m_RendererHolder->m_Device.IsNull()) return false;
 
-    CStdString filename = URIUtils::AddFileToFolder(CProfilesManager::Get().GetUserDataFolder(), "upnpserver.xml");
-    CUPnPSettings::Get().Load(filename);
+    std::string filename = URIUtils::AddFileToFolder(CProfilesManager::GetInstance().GetUserDataFolder(), "upnpserver.xml");
+    CUPnPSettings::GetInstance().Load(filename);
 
-    m_RendererHolder->m_Device = CreateRenderer(CUPnPSettings::Get().GetRendererPort());
+    m_RendererHolder->m_Device = CreateRenderer(CUPnPSettings::GetInstance().GetRendererPort());
 
     NPT_Result res = m_UPnP->AddDevice(m_RendererHolder->m_Device);
 
     // failed most likely because port is in use, try again with random port now
-    if (NPT_FAILED(res) && CUPnPSettings::Get().GetRendererPort() != 0) {
+    if (NPT_FAILED(res) && CUPnPSettings::GetInstance().GetRendererPort() != 0) {
         m_RendererHolder->m_Device = CreateRenderer(0);
 
         res = m_UPnP->AddDevice(m_RendererHolder->m_Device);
     }
 
     // save port but don't overwrite saved settings if random
-    if (NPT_SUCCEEDED(res) && CUPnPSettings::Get().GetRendererPort() == 0) {
-        CUPnPSettings::Get().SetRendererPort(m_RendererHolder->m_Device->GetPort());
+    if (NPT_SUCCEEDED(res) && CUPnPSettings::GetInstance().GetRendererPort() == 0) {
+        CUPnPSettings::GetInstance().SetRendererPort(m_RendererHolder->m_Device->GetPort());
     }
 
     // save UUID
-    CUPnPSettings::Get().SetRendererUUID(m_RendererHolder->m_Device->GetUUID().GetChars());
-    return CUPnPSettings::Get().Save(filename);
+    CUPnPSettings::GetInstance().SetRendererUUID(m_RendererHolder->m_Device->GetUUID().GetChars());
+    return CUPnPSettings::GetInstance().Save(filename);
 }
 
 /*----------------------------------------------------------------------

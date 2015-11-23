@@ -23,8 +23,6 @@
 #include "utils/log.h"
 #include "system.h"
 
-using namespace std;
-
 namespace ADDON
 {
 
@@ -33,8 +31,8 @@ CService::CService(const cp_extension_t *ext)
 {
   BuildServiceType();
 
-  CStdString start = CAddonMgr::Get().GetExtValue(ext->configuration, "@start");
-  if (start.Equals("startup"))
+  std::string start = CAddonMgr::GetInstance().GetExtValue(ext->configuration, "@start");
+  if (start == "startup")
     m_startOption = STARTUP;
 }
 
@@ -57,7 +55,7 @@ bool CService::Start()
   {
 #ifdef HAS_PYTHON
   case PYTHON:
-    ret = (CScriptInvocationManager::Get().Execute(LibPath(), this->shared_from_this()) != -1);
+    ret = (CScriptInvocationManager::GetInstance().ExecuteAsync(LibPath(), this->shared_from_this()) != -1);
     break;
 #endif
 
@@ -78,7 +76,7 @@ bool CService::Stop()
   {
 #ifdef HAS_PYTHON
   case PYTHON:
-    ret = CScriptInvocationManager::Get().Stop(LibPath());
+    ret = CScriptInvocationManager::GetInstance().Stop(LibPath());
     break;
 #endif
 
@@ -93,17 +91,17 @@ bool CService::Stop()
 
 void CService::BuildServiceType()
 {
-  CStdString str = LibPath();
-  CStdString ext;
+  std::string str = LibPath();
+  std::string ext;
 
   size_t p = str.find_last_of('.');
-  if (p != string::npos)
+  if (p != std::string::npos)
     ext = str.substr(p + 1);
 
 #ifdef HAS_PYTHON
-  CStdString pythonExt = ADDON_PYTHON_EXT;
+  std::string pythonExt = ADDON_PYTHON_EXT;
   pythonExt.erase(0, 2);
-  if ( ext.Equals(pythonExt) )
+  if ( ext == pythonExt )
     m_type = PYTHON;
   else
 #endif

@@ -23,7 +23,7 @@
 #include <arpa/inet.h>
 
 #include "Network.h"
-#include "ApplicationMessenger.h"
+#include "messaging/ApplicationMessenger.h"
 #include "network/NetworkServices.h"
 #include "utils/log.h"
 #ifdef TARGET_WINDOWS
@@ -31,6 +31,9 @@
 #include "win32/WIN32Util.h"
 #include "utils/CharsetConverter.h"
 #endif
+#include "utils/StringUtils.h"
+
+using namespace KODI::MESSAGING;
 
 /* slightly modified in_ether taken from the etherboot project (http://sourceforge.net/projects/etherboot) */
 bool in_ether (const char *bufp, unsigned char *addr)
@@ -131,12 +134,12 @@ int NetworkAccessPoint::FreqToChannel(float frequency)
 
 CNetwork::CNetwork()
 {
-  CApplicationMessenger::Get().NetworkMessage(SERVICES_UP, 0);
+  CApplicationMessenger::GetInstance().PostMsg(TMSG_NETWORKMESSAGE, SERVICES_UP, 0);
 }
 
 CNetwork::~CNetwork()
 {
-  CApplicationMessenger::Get().NetworkMessage(SERVICES_DOWN, 0);
+  CApplicationMessenger::GetInstance().PostMsg(TMSG_NETWORKMESSAGE, SERVICES_DOWN, 0);
 }
 
 int CNetwork::ParseHex(char *str, unsigned char *addr)
@@ -158,19 +161,49 @@ int CNetwork::ParseHex(char *str, unsigned char *addr)
    return len;
 }
 
-CStdString CNetwork::GetHostName(void)
+bool CNetwork::GetHostName(std::string& hostname)
 {
   char hostName[128];
   if (gethostname(hostName, sizeof(hostName)))
-    return CStdString("unknown");
+    return false;
 
-  std::string hostStr;
 #ifdef TARGET_WINDOWS
+  std::string hostStr;
   g_charsetConverter.systemToUtf8(hostName, hostStr);
+  hostname = hostStr;
 #else
-  hostStr = hostName;
+  hostname = hostName;
 #endif
-  return hostStr;
+  return true;
+}
+
+bool CNetwork::IsLocalHost(const std::string& hostname)
+{
+  if (hostname.empty())
+    return false;
+
+  if (StringUtils::StartsWith(hostname, "127.")
+      || (hostname == "::1")
+      || StringUtils::EqualsNoCase(hostname, "localhost"))
+    return true;
+
+  std::string myhostname;
+  if (GetHostName(myhostname)
+      && StringUtils::EqualsNoCase(hostname, myhostname))
+    return true;
+
+  std::vector<CNetworkInterface*>& ifaces = GetInterfaceList();
+  std::vector<CNetworkInterface*>::const_iterator iter = ifaces.begin();
+  while (iter != ifaces.end())
+  {
+    CNetworkInterface* iface = *iter;
+    if (iface && iface->GetCurrentIPAddress() == hostname)
+      return true;
+
+     ++iter;
+  }
+
+  return false;
 }
 
 CNetworkInterface* CNetwork::GetFirstConnectedInterface()
@@ -199,8 +232,8 @@ bool CNetwork::HasInterfaceForIP(unsigned long address)
       CNetworkInterface* iface = *iter;
       if (iface && iface->IsConnected())
       {
-         subnet = ntohl(inet_addr(iface->GetCurrentNetmask()));
-         local = ntohl(inet_addr(iface->GetCurrentIPAddress()));
+         subnet = ntohl(inet_addr(iface->GetCurrentNetmask().c_str()));
+         local = ntohl(inet_addr(iface->GetCurrentIPAddress().c_str()));
          if( (address & subnet) == (local & subnet) )
             return true;
       }
@@ -210,15 +243,8 @@ bool CNetwork::HasInterfaceForIP(unsigned long address)
    return false;
 }
 
-bool CNetwork::IsAvailable(bool wait /*= false*/)
+bool CNetwork::IsAvailable(void)
 {
-  if (wait)
-  {
-    // NOTE: Not implemented in linuxport branch as 99.9% of the time
-    //       we have the network setup already.  Trunk code has a busy
-    //       wait for 5 seconds here.
-  }
-
   std::vector<CNetworkInterface*>& ifaces = GetInterfaceList();
   return (ifaces.size() != 0);
 }
@@ -228,14 +254,14 @@ bool CNetwork::IsConnected()
    return GetFirstConnectedInterface() != NULL;
 }
 
-CNetworkInterface* CNetwork::GetInterfaceByName(CStdString& name)
+CNetworkInterface* CNetwork::GetInterfaceByName(const std::string& name)
 {
    std::vector<CNetworkInterface*>& ifaces = GetInterfaceList();
    std::vector<CNetworkInterface*>::const_iterator iter = ifaces.begin();
    while (iter != ifaces.end())
    {
       CNetworkInterface* iface = *iter;
-      if (iface && iface->GetName().Equals(name))
+      if (iface && iface->GetName() == name)
          return iface;
       ++iter;
    }
@@ -249,14 +275,14 @@ void CNetwork::NetworkMessage(EMESSAGE message, int param)
   {
     case SERVICES_UP:
       CLog::Log(LOGDEBUG, "%s - Starting network services",__FUNCTION__);
-      CNetworkServices::Get().Start();
+      CNetworkServices::GetInstance().Start();
       break;
 
     case SERVICES_DOWN:
       CLog::Log(LOGDEBUG, "%s - Signaling network services to stop",__FUNCTION__);
-      CNetworkServices::Get().Stop(false); // tell network services to stop, but don't wait for them yet
+      CNetworkServices::GetInstance().Stop(false); // tell network services to stop, but don't wait for them yet
       CLog::Log(LOGDEBUG, "%s - Waiting for network services to stop",__FUNCTION__);
-      CNetworkServices::Get().Stop(true); // wait for network services to stop
+      CNetworkServices::GetInstance().Stop(true); // wait for network services to stop
       break;
   }
 }
@@ -424,9 +450,9 @@ bool CNetwork::PingHost(unsigned long ipaddr, unsigned short port, unsigned int 
   if (err_msg && *err_msg)
   {
 #ifdef TARGET_WINDOWS
-    CStdString sock_err = CWIN32Util::WUSysMsg(WSAGetLastError());
+    std::string sock_err = CWIN32Util::WUSysMsg(WSAGetLastError());
 #else
-    CStdString sock_err = strerror(errno);
+    std::string sock_err = strerror(errno);
 #endif
 
     CLog::Log(LOGERROR, "%s(%s:%d) - %s (%s)", __FUNCTION__, inet_ntoa(addr.sin_addr), port, err_msg, sock_err.c_str());
@@ -458,9 +484,9 @@ int CreateTCPServerSocket(const int port, const bool bindLocal, const int backlo
     if (setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&no, sizeof(no)) < 0)
     {
 #ifdef _MSC_VER
-      CStdString sock_err = CWIN32Util::WUSysMsg(WSAGetLastError());
+      std::string sock_err = CWIN32Util::WUSysMsg(WSAGetLastError());
 #else
-      CStdString sock_err = strerror(errno);
+      std::string sock_err = strerror(errno);
 #endif
       CLog::Log(LOGWARNING, "%s Server: Only IPv6 supported (%s)", callerName, sock_err.c_str());
     }

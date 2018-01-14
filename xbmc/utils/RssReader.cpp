@@ -1,6 +1,6 @@
 /*
- *      Copyright (C) 2005-2013 Team XBMC
- *      http://xbmc.org
+ *      Copyright (C) 2005-2015 Team Kodi
+ *      http://kodi.tv
  *
  *  This Program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -13,7 +13,7 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with XBMC; see the file COPYING.  If not, see
+ *  along with Kodi; see the file COPYING.  If not, see
  *  <http://www.gnu.org/licenses/>.
  *
  */
@@ -21,20 +21,23 @@
 #include "network/Network.h"
 #include "threads/SystemClock.h"
 #include "RssReader.h"
+#include "ServiceBroker.h"
 #include "utils/HTMLUtil.h"
-#include "Application.h"
 #include "CharsetConverter.h"
 #include "URL.h"
 #include "filesystem/File.h"
 #include "filesystem/CurlFile.h"
 #if defined(TARGET_DARWIN)
-#include "osx/CocoaInterface.h"
+#include "platform/darwin/osx/CocoaInterface.h"
 #endif
 #include "settings/AdvancedSettings.h"
 #include "guilib/LocalizeStrings.h"
 #include "guilib/GUIRSSControl.h"
 #include "threads/SingleLock.h"
 #include "log.h"
+#ifdef TARGET_POSIX
+#include "platform/linux/XTimeUtils.h"
+#endif
 
 #define RSS_COLOR_BODY      0
 #define RSS_COLOR_HEADLINE  1
@@ -143,7 +146,7 @@ void CRssReader::Process()
 
     // we wait for the network to come up
     if ((url.IsProtocol("http") || url.IsProtocol("https")) &&
-        !g_application.getNetwork().IsAvailable())
+        !CServiceBroker::GetNetwork().IsAvailable())
     {
       CLog::Log(LOGWARNING, "RSS: No network connection");
       strXML = "<rss><item><title>"+g_localizeStrings.Get(15301)+"</title></item></rss>";
@@ -174,7 +177,7 @@ void CRssReader::Process()
         {
           if (http.Get(strUrl, strXML))
           {
-            fileCharset = http.GetServerReportedCharset();
+            fileCharset = http.GetProperty(XFILE::FILE_PROPERTY_CONTENT_CHARSET);
             CLog::Log(LOGDEBUG, "Got rss feed: %s", strUrl.c_str());
             break;
           }
@@ -266,11 +269,11 @@ void CRssReader::GetNewsItems(TiXmlElement* channelXmlNode, int iFeed)
   if (m_tagSet.empty())
     AddTag("title");
 
-  while (itemNode > 0)
+  while (itemNode != nullptr)
   {
     TiXmlNode* childNode = itemNode->FirstChild();
     mTagElements.clear();
-    while (childNode > 0)
+    while (childNode != nullptr)
     {
       std::string strName = childNode->ValueStr();
 
@@ -395,7 +398,7 @@ void CRssReader::UpdateObserver()
 
   vecText feed;
   getFeed(feed);
-  if (feed.size() > 0)
+  if (!feed.empty())
   {
     CSingleLock lock(g_graphicsContext);
     if (m_pObserver) // need to check again when locked to make sure observer wasnt removed

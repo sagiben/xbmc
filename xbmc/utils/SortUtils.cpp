@@ -26,10 +26,11 @@
 #include "utils/CharsetConverter.h"
 #include "utils/StringUtils.h"
 #include "utils/Variant.h"
+#include "utils/log.h"
 
 #include <algorithm>
 
-std::string ArrayToString(SortAttribute attributes, const CVariant &variant, const std::string &seperator = " / ")
+std::string ArrayToString(SortAttribute attributes, const CVariant &variant, const std::string &separator = " / ")
 {
   std::vector<std::string> strArray;
   if (variant.isArray())
@@ -42,7 +43,7 @@ std::string ArrayToString(SortAttribute attributes, const CVariant &variant, con
         strArray.push_back(it->asString());
     }
 
-    return StringUtils::Join(strArray, seperator);
+    return StringUtils::Join(strArray, separator);
   }
   else if (variant.isString())
   {
@@ -135,7 +136,15 @@ std::string ByAlbumType(SortAttribute attributes, const SortItem &values)
 
 std::string ByArtist(SortAttribute attributes, const SortItem &values)
 {
-  std::string label = ArrayToString(attributes, values.at(FieldArtist));
+  std::string label;
+  if (attributes & SortAttributeUseArtistSortName)
+  {
+    const CVariant &artistsort = values.at(FieldArtistSort);
+    if (!artistsort.isNull())
+      label = artistsort.asString();
+  }
+  if (label.empty())
+    label = ArrayToString(attributes, values.at(FieldArtist));
 
   const CVariant &album = values.at(FieldAlbum);
   if (!album.isNull())
@@ -150,7 +159,15 @@ std::string ByArtist(SortAttribute attributes, const SortItem &values)
 
 std::string ByArtistThenYear(SortAttribute attributes, const SortItem &values)
 {
-  std::string label = ArrayToString(attributes, values.at(FieldArtist));
+  std::string label;
+  if (attributes & SortAttributeUseArtistSortName)
+  {
+    const CVariant &artistsort = values.at(FieldArtistSort);
+    if (!artistsort.isNull())
+      label = artistsort.asString();
+  }
+  if (label.empty())
+    label = ArrayToString(attributes, values.at(FieldArtist));
 
   const CVariant &year = values.at(FieldYear);
   if (!year.isNull())
@@ -190,7 +207,7 @@ std::string ByProgramCount(SortAttribute attributes, const SortItem &values)
 
 std::string ByPlaylistOrder(SortAttribute attributes, const SortItem &values)
 {
-  // TODO: Playlist order is hacked into program count variable (not nice, but ok until 2.0)
+  //! @todo Playlist order is hacked into program count variable (not nice, but ok until 2.0)
   return ByProgramCount(attributes, values);
 }
 
@@ -388,12 +405,32 @@ std::string ByChannel(SortAttribute attributes, const SortItem &values)
 
 std::string ByChannelNumber(SortAttribute attributes, const SortItem &values)
 {
-  return StringUtils::Format("%i", (int)values.at(FieldChannelNumber).asInteger());
+  return values.at(FieldChannelNumber).asString();
 }
 
 std::string ByDateTaken(SortAttribute attributes, const SortItem &values)
 {
   return values.at(FieldDateTaken).asString();
+}
+
+std::string ByRelevance(SortAttribute attributes, const SortItem &values)
+{
+  return StringUtils::Format("%i", (int)values.at(FieldRelevance).asInteger());
+}
+
+std::string ByInstallDate(SortAttribute attributes, const SortItem &values)
+{
+  return values.at(FieldInstallDate).asString();
+}
+
+std::string ByLastUpdated(SortAttribute attributes, const SortItem &values)
+{
+  return values.at(FieldLastUpdated).asString();
+}
+
+std::string ByLastUsed(SortAttribute attributes, const SortItem &values)
+{
+  return values.at(FieldLastUsed).asString();
 }
 
 bool preliminarySort(const SortItem &left, const SortItem &right, bool handleFolder, bool &result, std::wstring &labelLeft, std::wstring &labelRight)
@@ -575,6 +612,10 @@ std::map<SortBy, SortUtils::SortPreparator> fillPreparators()
   preparators[SortByChannel]                  = ByChannel;
   preparators[SortByChannelNumber]            = ByChannelNumber;
   preparators[SortByDateTaken]                = ByDateTaken;
+  preparators[SortByRelevance]                = ByRelevance;
+  preparators[SortByInstallDate]              = ByInstallDate;
+  preparators[SortByLastUpdated]              = ByLastUpdated;
+  preparators[SortByLastUsed]                 = ByLastUsed;
 
   return preparators;
 }
@@ -597,15 +638,18 @@ std::map<SortBy, Fields> fillSortingFields()
   sortingFields[SortByTrackNumber].insert(FieldTrackNumber);
   sortingFields[SortByTime].insert(FieldTime);
   sortingFields[SortByArtist].insert(FieldArtist);
+  sortingFields[SortByArtist].insert(FieldArtistSort);
   sortingFields[SortByArtist].insert(FieldYear);
   sortingFields[SortByArtist].insert(FieldAlbum);
   sortingFields[SortByArtist].insert(FieldTrackNumber);
   sortingFields[SortByArtistThenYear].insert(FieldArtist);
+  sortingFields[SortByArtistThenYear].insert(FieldArtistSort);
   sortingFields[SortByArtistThenYear].insert(FieldYear);
   sortingFields[SortByArtistThenYear].insert(FieldAlbum);
   sortingFields[SortByArtistThenYear].insert(FieldTrackNumber);
   sortingFields[SortByAlbum].insert(FieldAlbum);
   sortingFields[SortByAlbum].insert(FieldArtist);
+  sortingFields[SortByAlbum].insert(FieldArtistSort);
   sortingFields[SortByAlbum].insert(FieldTrackNumber);
   sortingFields[SortByAlbumType].insert(FieldAlbumType);
   sortingFields[SortByGenre].insert(FieldGenre);
@@ -653,6 +697,10 @@ std::map<SortBy, Fields> fillSortingFields()
   sortingFields[SortByChannel].insert(FieldChannelName);
   sortingFields[SortByChannelNumber].insert(FieldChannelNumber);
   sortingFields[SortByDateTaken].insert(FieldDateTaken);
+  sortingFields[SortByRelevance].insert(FieldRelevance);
+  sortingFields[SortByInstallDate].insert(FieldInstallDate);
+  sortingFields[SortByLastUpdated].insert(FieldLastUpdated);
+  sortingFields[SortByLastUsed].insert(FieldLastUsed);
   sortingFields.insert(std::pair<SortBy, Fields>(SortByRandom, Fields()));
 
   return sortingFields;
@@ -682,7 +730,18 @@ void SortUtils::Sort(SortBy sortBy, SortOrder sortOrder, SortAttribute attribute
         }
 
         std::wstring sortLabel;
+#ifdef TARGET_ANDROID
+        // Android does not support locale; Translate to ASCII
+        std::string dest;
+        g_charsetConverter.utf8ToASCII(preparator(attributes, *item), dest);
+        for (char c : dest)
+        {
+          if (::isalnum(c) || c == ' ')
+            sortLabel.push_back(c);
+        }
+#else
         g_charsetConverter.utf8ToW(preparator(attributes, *item), sortLabel, false);
+#endif
         item->insert(std::pair<Field, CVariant>(FieldSort, CVariant(sortLabel)));
       }
 
@@ -721,7 +780,18 @@ void SortUtils::Sort(SortBy sortBy, SortOrder sortOrder, SortAttribute attribute
         }
 
         std::wstring sortLabel;
+#ifdef TARGET_ANDROID
+        // Android does not support locale; Translate to ASCII
+        std::string dest;
+        g_charsetConverter.utf8ToASCII(preparator(attributes, **item), dest);
+        for (char c : dest)
+        {
+          if (::isalnum(c) || c == ' ')
+            sortLabel.push_back(c);
+        }
+#else
         g_charsetConverter.utf8ToW(preparator(attributes, **item), sortLabel, false);
+#endif
         (*item)->insert(std::pair<Field, CVariant>(FieldSort, CVariant(sortLabel)));
       }
 
@@ -850,6 +920,7 @@ const sort_map table[] = {
   { SortByFile,                     SORT_METHOD_FILE,                         SortAttributeIgnoreFolders, 561 },
   { SortByRating,                   SORT_METHOD_SONG_RATING,                  SortAttributeNone,          563 },
   { SortByRating,                   SORT_METHOD_VIDEO_RATING,                 SortAttributeIgnoreFolders, 563 },
+  { SortByUserRating,               SORT_METHOD_SONG_USER_RATING,             SortAttributeIgnoreFolders, 38018 },
   { SortByUserRating,               SORT_METHOD_VIDEO_USER_RATING,            SortAttributeIgnoreFolders, 38018 },
   { SortBySortTitle,                SORT_METHOD_VIDEO_SORT_TITLE,             SortAttributeIgnoreFolders, 171 },
   { SortBySortTitle,                SORT_METHOD_VIDEO_SORT_TITLE_IGNORE_THE,  (SortAttribute)(SortAttributeIgnoreFolders | SortAttributeIgnoreArticle), 171 },
@@ -957,6 +1028,12 @@ const std::string& TypeToString(const std::map<std::string, T>& typeMap, const T
   return it->first;
 }
 
+/**
+ * @brief Sort methods to translate string values to enum values.
+ *
+ * @warning On string changes, edit __SortBy__ enumerator to have strings right
+ * for documentation!
+ */
 const std::map<std::string, SortBy> sortMethods = {
   { "label",            SortByLabel },
   { "date",             SortByDate },
@@ -1005,7 +1082,10 @@ const std::map<std::string, SortBy> sortMethods = {
   { "channel",          SortByChannel },
   { "channelnumber",    SortByChannelNumber },
   { "datetaken",        SortByDateTaken },
-  { "userrating",       SortByUserRating }
+  { "userrating",       SortByUserRating },
+  { "installdate",      SortByInstallDate },
+  { "lastupdated",      SortByLastUpdated },
+  { "lastused",         SortByLastUsed },
 };
 
 SortBy SortUtils::SortMethodFromString(const std::string& sortMethod)

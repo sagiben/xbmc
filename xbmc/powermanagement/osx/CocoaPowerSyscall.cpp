@@ -26,7 +26,7 @@ typedef unsigned char BYTE;
 #include "utils/SystemInfo.h"
 #include "Application.h"
 #include "powermanagement/PowerManager.h"
-#include "windowing/WindowingFactory.h"
+#include "ServiceBroker.h"
 #include "CocoaPowerSyscall.h"
 
 #if defined(TARGET_DARWIN_OSX)
@@ -36,9 +36,9 @@ typedef unsigned char BYTE;
   #include <ApplicationServices/ApplicationServices.h>
 #endif
 
-#include "osx/DarwinUtils.h"
+#include "platform/darwin/DarwinUtils.h"
 
-#include "osx/CocoaInterface.h"
+#include "platform/darwin/osx/CocoaInterface.h"
 
 #if defined(TARGET_DARWIN_OSX)
 OSStatus SendAppleEventToSystemProcess(AEEventID eventToSendID)
@@ -337,16 +337,16 @@ void CCocoaPowerSyscall::OSPowerCallBack(void *refcon, io_service_t service, nat
       ctx->m_OnSuspend = true;
       // force processing of this power event. This callback runs
       // in main thread so we can do this.
-      g_powerManager.ProcessEvents();
+      CServiceBroker::GetPowerManager().ProcessEvents();
       IOAllowPowerChange(ctx->m_root_port, (long)msg_arg);
       //CLog::Log(LOGDEBUG, "%s - kIOMessageSystemWillSleep", __FUNCTION__);
       // let XBMC know system will sleep
-      // TODO:
+      //! @todo implement
     break;
     case kIOMessageSystemHasPoweredOn:
       // System has awakened from sleep.
       // let XBMC know system has woke
-      // TODO:
+      //! @todo implement
       ctx->m_OnResume = true;
       //CLog::Log(LOGDEBUG, "%s - kIOMessageSystemHasPoweredOn", __FUNCTION__);
     break;

@@ -19,6 +19,7 @@
  */
 
 #include "GUIDialogFileBrowser.h"
+#include "ServiceBroker.h"
 #include "Util.h"
 #include "utils/URIUtils.h"
 #include "utils/StringUtils.h"
@@ -30,8 +31,6 @@
 #include "network/Network.h"
 #include "GUIPassword.h"
 #include "guilib/GUIWindowManager.h"
-#include "Application.h"
-#include "GUIDialogOK.h"
 #include "GUIDialogYesNo.h"
 #include "guilib/GUIKeyboardFactory.h"
 #include "GUIUserMessages.h"
@@ -46,7 +45,11 @@
 #include "utils/log.h"
 #include "URL.h"
 #include "utils/Variant.h"
+#include "utils/FileExtensionProvider.h"
+#include "settings/AdvancedSettings.h"
+#include "messaging/helpers/DialogOKHelper.h"
 
+using namespace KODI::MESSAGING;
 using namespace XFILE;
 
 #define CONTROL_LIST          450
@@ -185,20 +188,19 @@ bool CGUIDialogFileBrowser::OnMessage(CGUIMessage& message)
         int iItem = m_viewControl.GetSelectedItem();
         int iAction = message.GetParam1();
         if (iItem < 0) break;
-        if (iAction == ACTION_SELECT_ITEM || iAction == ACTION_MOUSE_LEFT_CLICK)
+        CFileItemPtr pItem = (*m_vecItems)[iItem];
+        if ((iAction == ACTION_SELECT_ITEM || iAction == ACTION_MOUSE_LEFT_CLICK) &&
+           (!m_multipleSelection || pItem->m_bIsShareOrDrive || pItem->m_bIsFolder))
         {
           OnClick(iItem);
           return true;
         }
-        else if (iAction == ACTION_HIGHLIGHT_ITEM && m_multipleSelection)
+        else if ((iAction == ACTION_HIGHLIGHT_ITEM || iAction == ACTION_MOUSE_LEFT_CLICK || iAction == ACTION_SELECT_ITEM) &&
+                (m_multipleSelection && !pItem->m_bIsShareOrDrive && !pItem->m_bIsFolder))
         {
-          CFileItemPtr pItem = (*m_vecItems)[iItem];
-          if (!pItem->m_bIsShareOrDrive && !pItem->m_bIsFolder)
-          {
-            pItem->Select(!pItem->IsSelected());
-            CGUIMessage msg(GUI_MSG_ITEM_SELECT, GetID(), message.GetSenderId(), iItem + 1);
-            OnMessage(msg);
-          }
+          pItem->Select(!pItem->IsSelected());
+          CGUIMessage msg(GUI_MSG_ITEM_SELECT, GetID(), message.GetSenderId(), iItem + 1);
+          OnMessage(msg);
         }
       }
       else if (message.GetSenderId() == CONTROL_OK)
@@ -223,7 +225,7 @@ bool CGUIDialogFileBrowser::OnMessage(CGUIMessage& message)
             Close();
           }
           else
-            CGUIDialogOK::ShowAndGetInput(CVariant{257}, CVariant{20072});
+            HELPERS::ShowOKDialogText(CVariant{257}, CVariant{20072});
         }
         else
         {
@@ -255,7 +257,7 @@ bool CGUIDialogFileBrowser::OnMessage(CGUIMessage& message)
           if (CDirectory::Create(strPath))
             Update(m_vecItems->GetPath());
           else
-            CGUIDialogOK::ShowAndGetInput(CVariant{20069}, CVariant{20072});
+            HELPERS::ShowOKDialogText(CVariant{20069}, CVariant{20072});
         }
       }
       else if (message.GetSenderId() == CONTROL_FLIP)
@@ -568,16 +570,16 @@ bool CGUIDialogFileBrowser::HaveDiscOrConnection( int iDriveType )
   {
     if ( !g_mediaManager.IsDiscInDrive() )
     {
-      CGUIDialogOK::ShowAndGetInput(CVariant{218}, CVariant{219});
+      HELPERS::ShowOKDialogText(CVariant{218}, CVariant{219});
       return false;
     }
   }
   else if ( iDriveType == CMediaSource::SOURCE_TYPE_REMOTE )
   {
-    // TODO: Handle not connected to a remote share
-    if ( !g_application.getNetwork().IsConnected() )
+    //! @todo Handle not connected to a remote share
+    if ( !CServiceBroker::GetNetwork().IsConnected() )
     {
-      CGUIDialogOK::ShowAndGetInput(CVariant{220}, CVariant{221});
+      HELPERS::ShowOKDialogText(CVariant{220}, CVariant{221});
       return false;
     }
   }
@@ -653,12 +655,12 @@ bool CGUIDialogFileBrowser::ShowAndGetImage(const CFileItemList &items, const VE
 
 bool CGUIDialogFileBrowser::ShowAndGetImage(const VECSOURCES &shares, const std::string &heading, std::string &path)
 {
-  return ShowAndGetFile(shares, ".png|.jpg|.bmp|.gif|.tbn|.dds", heading, path, true); // true for use thumbs
+  return ShowAndGetFile(shares, CServiceBroker::GetFileExtensionProvider().GetPictureExtensions(), heading, path, true); // true for use thumbs
 }
 
 bool CGUIDialogFileBrowser::ShowAndGetImageList(const VECSOURCES &shares, const std::string &heading, std::vector<std::string> &path)
 {
-  return ShowAndGetFileList(shares, ".png|.jpg|.bmp|.gif|.tbn|.dds", heading, path, true); // true for use thumbs
+  return ShowAndGetFileList(shares, CServiceBroker::GetFileExtensionProvider().GetPictureExtensions(), heading, path, true); // true for use thumbs
 }
 
 bool CGUIDialogFileBrowser::ShowAndGetDirectory(const VECSOURCES &shares, const std::string &heading, std::string &path, bool bWriteOnly)
@@ -946,23 +948,25 @@ bool CGUIDialogFileBrowser::OnPopupMenu(int iItem)
       if (CGUIDialogNetworkSetup::ShowAndGetNetworkAddress(newPath))
       {
         g_mediaManager.SetLocationPath(strOldPath,newPath);
+        CURL url(newPath);
         for (unsigned int i=0;i<shares.size();++i)
         {
           if (URIUtils::CompareWithoutSlashAtEnd(shares[i].strPath, strOldPath))//getPath().Equals(strOldPath))
           {
-            shares[i].strName = newPath;
-            shares[i].strPath = newPath;//setPath(newPath);
+            shares[i].strName = url.GetWithoutUserDetails();
+            shares[i].strPath = newPath;
             URIUtils::RemoveSlashAtEnd(shares[i].strName);
             break;
           }
         }
-        // re-open our dialog
+        // refresh dialog content
         SetSources(shares);
         m_rootDir.SetMask("/");
         m_browsingForFolders = 1;
         m_addNetworkShareEnabled = true;
-        m_selectedPath = newPath;
-        Open();
+        m_selectedPath = url.GetWithoutUserDetails();
+        Update(m_Directory->GetPath());
+        m_viewControl.SetSelectedItem(iItem);
       }
     }
     else

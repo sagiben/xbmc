@@ -21,29 +21,23 @@
 #include "Screenshot.h"
 
 #include "system.h"
+#include "system_gl.h"
 #include <vector>
 
+#include "ServiceBroker.h"
 #include "Util.h"
+#include "URL.h"
 
-#include "Application.h"
-#include "windowing/WindowingFactory.h"
 #include "pictures/Picture.h"
 
 #ifdef TARGET_RASPBERRY_PI
-#include "xbmc/linux/RBP.h"
-#endif
-
-#ifdef HAS_VIDEO_PLAYBACK
-#include "cores/VideoRenderers/RenderManager.h"
-#endif
-
-#ifdef HAS_IMXVPU
-// This has to go into another header file
-#include "cores/dvdplayer/DVDCodecs/Video/DVDVideoCodecIMX.h"
+#include "platform/linux/RBP.h"
 #endif
 
 #include "filesystem/File.h"
 #include "guilib/GraphicContext.h"
+#include "guilib/GUIWindowManager.h"
+#include "guilib/LocalizeStrings.h"
 
 #include "utils/JobManager.h"
 #include "utils/URIUtils.h"
@@ -54,6 +48,10 @@
 
 #if defined(HAS_LIBAMCODEC)
 #include "utils/ScreenshotAML.h"
+#endif
+
+#if defined(TARGET_WINDOWS)
+#include "rendering/dx/DeviceResources.h"
 #endif
 
 using namespace XFILE;
@@ -78,21 +76,18 @@ bool CScreenshotSurface::capture()
   m_buffer = g_RBP.CaptureDisplay(m_width, m_height, &m_stride, true, false);
   if (!m_buffer)
     return false;
-#elif defined(HAS_DX)
-  g_graphicsContext.Lock();
-  if (g_application.m_pPlayer->IsPlayingVideo())
-  {
-#ifdef HAS_VIDEO_PLAYBACK
-    g_renderManager.SetupScreenshot();
-#endif
-  }
+#elif defined(TARGET_WINDOWS)
 
-  g_application.RenderNoPresent();
-  g_Windowing.FinishCommandList();
+  CSingleLock lock(g_graphicsContext);
 
-  ID3D11DeviceContext* pImdContext = g_Windowing.GetImmediateContext();
-  ID3D11DeviceContext* pContext = g_Windowing.Get3D11Context();
-  ID3D11Device* pDevice = g_Windowing.Get3D11Device();
+  g_windowManager.Render();
+
+  auto deviceResources = DX::DeviceResources::Get();
+  deviceResources->FinishCommandList();
+
+  ID3D11DeviceContext* pImdContext = deviceResources->GetImmediateContext();
+  ID3D11DeviceContext* pContext = deviceResources->GetD3DContext();
+  ID3D11Device* pDevice = deviceResources->GetD3DDevice();
 
   ID3D11RenderTargetView* pRTView = nullptr;
   pContext->OMGetRenderTargets(1, &pRTView, nullptr);
@@ -138,18 +133,10 @@ bool CScreenshotSurface::capture()
   }
   SAFE_RELEASE(pRTTexture);
 
-  g_graphicsContext.Unlock();
-
 #elif defined(HAS_GL) || defined(HAS_GLES)
 
-  g_graphicsContext.BeginPaint();
-  if (g_application.m_pPlayer->IsPlayingVideo())
-  {
-#ifdef HAS_VIDEO_PLAYBACK
-    g_renderManager.SetupScreenshot();
-#endif
-  }
-  g_application.RenderNoPresent();
+  CSingleLock lock(g_graphicsContext);
+  g_windowManager.Render();
 #ifndef HAS_GLES
   glReadBuffer(GL_BACK);
 #endif
@@ -163,12 +150,11 @@ bool CScreenshotSurface::capture()
   unsigned char* surface = new unsigned char[m_stride * m_height];
 
   //read pixels from the backbuffer
-#if HAS_GLES == 2
+#if HAS_GLES >= 2
   glReadPixels(viewport[0], viewport[1], viewport[2], viewport[3], GL_RGBA, GL_UNSIGNED_BYTE, (GLvoid*)surface);
 #else
   glReadPixels(viewport[0], viewport[1], viewport[2], viewport[3], GL_BGRA, GL_UNSIGNED_BYTE, (GLvoid*)surface);
 #endif
-  g_graphicsContext.EndPaint();
 
   //make a new buffer and copy the read image to it with the Y axis inverted
   m_buffer = new unsigned char[m_stride * m_height];
@@ -186,16 +172,10 @@ bool CScreenshotSurface::capture()
   }
 
   delete [] surface;
-  
+
 #if defined(HAS_LIBAMCODEC)
   // Captures the current visible videobuffer and blend it into m_buffer (captured overlay)
   CScreenshotAML::CaptureVideoFrame(m_buffer, m_width, m_height);
-#endif
-
-#ifdef HAS_IMXVPU
-  // Captures the current visible framebuffer page and blends it into the
-  // captured GL overlay
-  g_IMXContext.CaptureDisplay(m_buffer, m_width, m_height);
 #endif
 
 #else
@@ -212,11 +192,11 @@ void CScreenShot::TakeScreenshot(const std::string &filename, bool sync)
   CScreenshotSurface surface;
   if (!surface.capture())
   {
-    CLog::Log(LOGERROR, "Screenshot %s failed", filename.c_str());
+    CLog::Log(LOGERROR, "Screenshot %s failed", CURL::GetRedacted(filename).c_str());
     return;
   }
 
-  CLog::Log(LOGDEBUG, "Saving screenshot %s", filename.c_str());
+  CLog::Log(LOGDEBUG, "Saving screenshot %s", CURL::GetRedacted(filename).c_str());
 
   //set alpha byte to 0xFF
   for (int y = 0; y < surface.m_height; y++)
@@ -230,7 +210,7 @@ void CScreenShot::TakeScreenshot(const std::string &filename, bool sync)
   if (sync)
   {
     if (!CPicture::CreateThumbnailFromSurface(surface.m_buffer, surface.m_width, surface.m_height, surface.m_stride, filename))
-      CLog::Log(LOGERROR, "Unable to write screenshot %s", filename.c_str());
+      CLog::Log(LOGERROR, "Unable to write screenshot %s", CURL::GetRedacted(filename).c_str());
 
     delete [] surface.m_buffer;
     surface.m_buffer = NULL;
@@ -242,7 +222,7 @@ void CScreenShot::TakeScreenshot(const std::string &filename, bool sync)
     if (fp)
       fclose(fp);
     else
-      CLog::Log(LOGERROR, "Unable to create file %s", filename.c_str());
+      CLog::Log(LOGERROR, "Unable to create file %s", CURL::GetRedacted(filename).c_str());
 
     //write .png file asynchronous with CThumbnailWriter, prevents stalling of the render thread
     //buffer is deleted from CThumbnailWriter
@@ -260,13 +240,13 @@ void CScreenShot::TakeScreenshot()
   std::string strDir;
 
   // check to see if we have a screenshot folder yet
-  CSettingPath *screenshotSetting = (CSettingPath*)CSettings::GetInstance().GetSetting(CSettings::SETTING_DEBUG_SCREENSHOTPATH);
+  std::shared_ptr<CSettingPath> screenshotSetting = std::static_pointer_cast<CSettingPath>(CServiceBroker::GetSettings().GetSetting(CSettings::SETTING_DEBUG_SCREENSHOTPATH));
   if (screenshotSetting != NULL)
   {
     strDir = screenshotSetting->GetValue();
     if (strDir.empty())
     {
-      if (CGUIControlButtonSetting::GetPath(screenshotSetting))
+      if (CGUIControlButtonSetting::GetPath(screenshotSetting, &g_localizeStrings))
         strDir = screenshotSetting->GetValue();
     }
   }
@@ -300,7 +280,7 @@ void CScreenShot::TakeScreenshot()
           newDir = screenshotSetting->GetValue();
           if (newDir.empty())
           {
-            if (CGUIControlButtonSetting::GetPath(screenshotSetting))
+            if (CGUIControlButtonSetting::GetPath(screenshotSetting, &g_localizeStrings))
               newDir = screenshotSetting->GetValue();
           }
         }

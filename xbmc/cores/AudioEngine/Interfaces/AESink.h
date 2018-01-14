@@ -31,8 +31,8 @@ public:
   /* return the name of this sync for logging */
   virtual const char *GetName() = 0;
 
-  IAESink() {};
-  virtual ~IAESink() {};
+  IAESink() = default;
+  virtual ~IAESink() = default;
 
   /*
     The sink does NOT have to honour anything in the format struct or the device
@@ -65,6 +65,11 @@ public:
   */
   virtual unsigned int AddPackets(uint8_t **data, unsigned int frames, unsigned int offset) = 0;
 
+  /*!
+   * @brief instruct the sink to add a pause
+   * @param millis ms to pause
+   */
+  virtual void AddPause(unsigned int millis) {};
 
   /*!
    * @brief Return a timestamped status structure with delay and sink info

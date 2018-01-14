@@ -28,19 +28,13 @@
 #include "utils/log.h"
 #include "utils/Variant.h"
 
-#define CONTROL_CANCEL_BUTTON 10
-#define CONTROL_PROGRESS_BAR 20
-
 CGUIDialogProgress::CGUIDialogProgress(void)
-    : CGUIDialogBoxBase(WINDOW_DIALOG_PROGRESS, "DialogProgress.xml")
+    : CGUIDialogBoxBase(WINDOW_DIALOG_PROGRESS, "DialogConfirm.xml")
 {
   Reset();
 }
 
-CGUIDialogProgress::~CGUIDialogProgress(void)
-{
-
-}
+CGUIDialogProgress::~CGUIDialogProgress(void) = default;
 
 void CGUIDialogProgress::Reset()
 {
@@ -49,7 +43,7 @@ void CGUIDialogProgress::Reset()
   m_iCurrent = 0;
   m_iMax = 0;
   m_percentage = 0;
-  m_showProgress = false;
+  m_showProgress = true;
   m_bCanCancel = true;
   SetInvalid();
 }
@@ -67,7 +61,7 @@ void CGUIDialogProgress::Open(const std::string &param /* = "" */)
 
   {
     CSingleLock lock(g_graphicsContext);
-    ShowProgressBar(false);
+    ShowProgressBar(true);
   }
   
   CGUIDialog::Open_Internal(false, param);
@@ -88,15 +82,7 @@ void CGUIDialogProgress::Progress()
 {
   if (m_active)
   {
-    g_windowManager.ProcessRenderLoop();
-  }
-}
-
-void CGUIDialogProgress::ProgressKeys()
-{
-  if (m_active)
-  {
-    g_application.FrameMove(true);
+    ProcessRenderLoop();
   }
 }
 
@@ -112,7 +98,7 @@ bool CGUIDialogProgress::OnMessage(CGUIMessage& message)
   case GUI_MSG_CLICKED:
     {
       int iControl = message.GetSenderId();
-      if (iControl == CONTROL_CANCEL_BUTTON && m_bCanCancel && !m_bCanceled)
+      if (iControl == CONTROL_NO_BUTTON && m_bCanCancel && !m_bCanceled)
       {
         std::string strHeading = m_strHeading;
         strHeading.append(" : ");
@@ -140,11 +126,11 @@ bool CGUIDialogProgress::OnBack(int actionID)
 void CGUIDialogProgress::OnWindowLoaded()
 {
   CGUIDialog::OnWindowLoaded();
-  const CGUIControl *control = GetControl(CONTROL_PROGRESS_BAR);
+  CGUIControl *control = GetControl(CONTROL_PROGRESS_BAR);
   if (control && control->GetControlType() == CGUIControl::GUICONTROL_PROGRESS)
   {
     // make sure we have the appropriate info set
-    CGUIProgressControl *progress = (CGUIProgressControl *)control;
+    CGUIProgressControl *progress = static_cast<CGUIProgressControl*>(control);
     if (!progress->GetInfo())
       progress->SetInfo(SYSTEM_PROGRESS_BAR);
   }
@@ -171,7 +157,8 @@ void CGUIDialogProgress::SetProgressAdvance(int nSteps/*=1*/)
   if (m_iCurrent>m_iMax)
     m_iCurrent=0;
 
-  SetPercentage((m_iCurrent*100)/m_iMax);
+  if (m_iMax > 0)
+    SetPercentage((m_iCurrent*100)/m_iMax);
 }
 
 bool CGUIDialogProgress::Abort()
@@ -184,6 +171,15 @@ void CGUIDialogProgress::ShowProgressBar(bool bOnOff)
   CSingleLock lock(m_section);
   m_showProgress = bOnOff;
   SetInvalid();
+}
+
+bool CGUIDialogProgress::Wait(int progresstime /*= 10*/)
+{
+  CEvent m_done;
+  while (!m_done.WaitMSec(progresstime) && m_active && !m_bCanceled)
+    Progress();
+
+  return !m_bCanceled;
 }
 
 void CGUIDialogProgress::Process(unsigned int currentTime, CDirtyRegionList &dirtyregions)
@@ -201,16 +197,25 @@ void CGUIDialogProgress::Process(unsigned int currentTime, CDirtyRegionList &dir
     else
       SET_CONTROL_HIDDEN(CONTROL_PROGRESS_BAR);
     if (showCancel)
-      SET_CONTROL_VISIBLE(CONTROL_CANCEL_BUTTON);
+      SET_CONTROL_VISIBLE(CONTROL_NO_BUTTON);
     else
-      SET_CONTROL_HIDDEN(CONTROL_CANCEL_BUTTON);
+      SET_CONTROL_HIDDEN(CONTROL_NO_BUTTON);
   }
   CGUIDialogBoxBase::Process(currentTime, dirtyregions);
 }
 
+void CGUIDialogProgress::OnInitWindow()
+{
+  SET_CONTROL_HIDDEN(CONTROL_YES_BUTTON);
+  SET_CONTROL_HIDDEN(CONTROL_CUSTOM_BUTTON);
+  SET_CONTROL_FOCUS(CONTROL_NO_BUTTON, 0);
+
+  CGUIDialogBoxBase::OnInitWindow();
+}
+
 int CGUIDialogProgress::GetDefaultLabelID(int controlId) const
 {
-  if (controlId == CONTROL_CANCEL_BUTTON)
+  if (controlId == CONTROL_NO_BUTTON)
     return 222;
   return CGUIDialogBoxBase::GetDefaultLabelID(controlId);
 }

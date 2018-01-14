@@ -52,6 +52,7 @@ public:
   bool HasControl(int controlID) const;
   int GetNextViewMode(int direction = 1) const;
   int GetViewModeNumber(int number) const;
+  int GetViewModeCount() const;
   int GetViewModeByID(int id) const;
 
   int GetCurrentControl() const;
@@ -60,7 +61,7 @@ public:
 
 protected:
   int GetSelectedItem(const CGUIControl *control) const;
-  void UpdateContents(const CGUIControl *control, int currentItem);
+  void UpdateContents(const CGUIControl *control, int currentItem) const;
   void UpdateView();
   void UpdateViewAsControl(const std::string &viewLabel);
   void UpdateViewVisibility();

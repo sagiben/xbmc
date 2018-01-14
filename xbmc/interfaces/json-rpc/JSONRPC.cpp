@@ -1,6 +1,6 @@
 /*
- *      Copyright (C) 2005-2013 Team XBMC
- *      http://xbmc.org
+ *      Copyright (C) 2005-2015 Team Kodi
+ *      http://kodi.tv
  *
  *  This Program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -13,7 +13,7 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with XBMC; see the file COPYING.  If not, see
+ *  along with Kodi; see the file COPYING.  If not, see
  *  <http://www.gnu.org/licenses/>.
  *
  */
@@ -25,7 +25,8 @@
 #include "addons/Addon.h"
 #include "addons/IAddon.h"
 #include "dbwrappers/DatabaseQuery.h"
-#include "input/ButtonTranslator.h"
+#include "input/ActionTranslator.h"
+#include "input/WindowTranslator.h"
 #include "interfaces/AnnouncementManager.h"
 #include "playlists/SmartPlayList.h"
 #include "settings/AdvancedSettings.h"
@@ -47,15 +48,15 @@ void CJSONRPC::Initialize()
   // Add some types/enums at runtime
   std::vector<std::string> enumList;
   for (int addonType = ADDON::ADDON_UNKNOWN; addonType < ADDON::ADDON_MAX; addonType++)
-    enumList.push_back(ADDON::TranslateType(static_cast<ADDON::TYPE>(addonType), false));
+    enumList.push_back(ADDON::CAddonInfo::TranslateType(static_cast<ADDON::TYPE>(addonType), false));
   CJSONServiceDescription::AddEnum("Addon.Types", enumList);
 
   enumList.clear();
-  CButtonTranslator::GetActions(enumList);
+  CActionTranslator::GetActions(enumList);
   CJSONServiceDescription::AddEnum("Input.Action", enumList);
 
   enumList.clear();
-  CButtonTranslator::GetWindows(enumList);
+  CWindowTranslator::GetWindows(enumList);
   CJSONServiceDescription::AddEnum("GUI.Window", enumList);
 
   // filter-related enums
@@ -137,7 +138,7 @@ JSONRPC_STATUS CJSONRPC::Version(const std::string &method, ITransportLayer *tra
   if (version != NULL)
   {
     std::vector<std::string> parts = StringUtils::Split(version, ".");
-    if (parts.size() > 0)
+    if (!parts.empty())
       result["version"]["major"] = (int)strtol(parts[0].c_str(), NULL, 10);
     if (parts.size() > 1)
       result["version"]["minor"] = (int)strtol(parts[1].c_str(), NULL, 10);
@@ -238,11 +239,9 @@ std::string CJSONRPC::MethodCall(const std::string &inputString, ITransportLayer
   CVariant inputroot, outputroot, result;
   bool hasResponse = false;
 
-  if(g_advancedSettings.CanLogComponent(LOGJSONRPC))
-    CLog::Log(LOGDEBUG, "JSONRPC: Incoming request: %s", inputString.c_str());
+  CLog::Log(LOGDEBUG, LOGJSONRPC, "JSONRPC: Incoming request: %s", inputString.c_str());
 
-  inputroot = CJSONVariantParser::Parse((unsigned char *)inputString.c_str(), inputString.length());
-  if (!inputroot.isNull())
+  if (CJSONVariantParser::Parse(inputString, inputroot) && !inputroot.isNull())
   {
     if (inputroot.isArray())
     {
@@ -275,7 +274,10 @@ std::string CJSONRPC::MethodCall(const std::string &inputString, ITransportLayer
     hasResponse = true;
   }
 
-  std::string str = hasResponse ? CJSONVariantWriter::Write(outputroot, g_advancedSettings.m_jsonOutputCompact) : "";
+  std::string str;
+  if (hasResponse)
+    CJSONVariantWriter::Write(outputroot, str, g_advancedSettings.m_jsonOutputCompact);
+
   return str;
 }
 
@@ -302,7 +304,10 @@ bool CJSONRPC::HandleMethodCall(const CVariant& request, CVariant& response, ITr
   }
   else
   {
-    CLog::Log(LOGERROR, "JSONRPC: Failed to parse '%s'\n", CJSONVariantWriter::Write(request, true).c_str());
+    std::string str;
+    CJSONVariantWriter::Write(request, str, true);
+
+    CLog::Log(LOGERROR, "JSONRPC: Failed to parse '%s'\n", str.c_str());
     errorCode = InvalidRequest;
   }
 
@@ -313,13 +318,13 @@ bool CJSONRPC::HandleMethodCall(const CVariant& request, CVariant& response, ITr
 
 inline bool CJSONRPC::IsProperJSONRPC(const CVariant& inputroot)
 {
-  return inputroot.isObject() && inputroot.isMember("jsonrpc") && inputroot["jsonrpc"].isString() && inputroot["jsonrpc"] == CVariant("2.0") && inputroot.isMember("method") && inputroot["method"].isString() && (!inputroot.isMember("params") || inputroot["params"].isArray() || inputroot["params"].isObject());
+  return inputroot.isMember("jsonrpc") && inputroot["jsonrpc"].isString() && inputroot["jsonrpc"] == CVariant("2.0") && inputroot.isMember("method") && inputroot["method"].isString() && (!inputroot.isMember("params") || inputroot["params"].isArray() || inputroot["params"].isObject());
 }
 
 inline void CJSONRPC::BuildResponse(const CVariant& request, JSONRPC_STATUS code, const CVariant& result, CVariant& response)
 {
   response["jsonrpc"] = "2.0";
-  response["id"] = request.isObject() && request.isMember("id") ? request["id"] : CVariant();
+  response["id"] = request.isMember("id") ? request["id"] : CVariant();
 
   switch (code)
   {

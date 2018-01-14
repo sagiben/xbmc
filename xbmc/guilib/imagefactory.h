@@ -25,11 +25,10 @@
 class ImageFactory
 {
 public:
-  ImageFactory() {}
-  virtual ~ImageFactory() {}
+  ImageFactory() = default;
+  virtual ~ImageFactory() = default;
 
   static IImage* CreateLoader(const std::string& strFileName);
   static IImage* CreateLoader(const CURL& url);
   static IImage* CreateLoaderFromMimeType(const std::string& strMimeType);
-  static IImage* CreateFallbackLoader(const std::string& strMimeType);
 };

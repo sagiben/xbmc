@@ -36,6 +36,8 @@ class IAEStream;
 class IAESound;
 class IAEPacketizer;
 class IAudioCallback;
+class IAEClockCallback;
+class CAEStreamInfo;
 
 /* sound options */
 #define AE_SOUND_OFF    0 /* disable sounds */
@@ -59,7 +61,7 @@ enum AEQuality
 
   /* Optional quality levels */
   AE_QUALITY_REALLYHIGH = 100, /* Uncompromised optional quality level,
-                               usually with unmeasurable and unnoticeable improvement */ 
+                               usually with unmeasurable and unnoticeable improvement */
   AE_QUALITY_GPU        = 101, /* GPU acceleration */
 };
 
@@ -69,10 +71,9 @@ enum AEQuality
 class IAE
 {
 protected:
-  friend class CAEFactory;
 
-  IAE() {}
-  virtual ~IAE() {}
+  IAE() = default;
+  virtual ~IAE() = default;
 
   /**
    * Returns true when it should be possible to initialize this engine, if it returns false
@@ -112,12 +113,6 @@ public:
    * @return True if processing suspended
    */
   virtual bool IsSuspended() {return true;}
-  
-  /**
-   * Callback to alert the AudioEngine of setting changes
-   * @param setting The name of the setting that was changed
-   */
-  virtual void OnSettingsChange(const std::string& setting) {}
 
   /**
    * Returns the current master volume level of the AudioEngine
@@ -144,21 +139,12 @@ public:
   virtual bool IsMuted() = 0;
 
   /**
-   * Sets the sound mode
-   * @param mode One of AE_SOUND_OFF, AE_SOUND_IDLE or AE_SOUND_ALWAYS
-   */
-  virtual void SetSoundMode(const int mode) = 0;
-
-  /**
    * Creates and returns a new IAEStream in the format specified, this function should never fail
-   * @param dataFormat The data format the incoming audio will be in (eg, AE_FMT_S16LE)
-   * @param sampleRate The sample rate of the audio data (eg, 48000)
-   * @prarm encodedSampleRate The sample rate of the encoded audio data if AE_IS_RAW(dataFormat)
-   * @param channelLayout The order of the channels in the audio data
+   * @param audioFormat
    * @param options A bit field of stream options (see: enum AEStreamOptions)
    * @return a new IAEStream that will accept data in the requested format
    */
-  virtual IAEStream *MakeStream(enum AEDataFormat dataFormat, unsigned int sampleRate, unsigned int encodedSampleRate, CAEChannelInfo& channelLayout, unsigned int options = 0) = 0;
+  virtual IAEStream *MakeStream(AEAudioFormat &audioFormat, unsigned int options = 0, IAEClockCallback *clock = NULL) = 0;
 
   /**
    * This method will remove the specifyed stream from the engine.
@@ -166,7 +152,7 @@ public:
    * @param stream The stream to be altered
    * @return NULL
    */
-  virtual IAEStream *FreeStream(IAEStream *stream) = 0;
+  virtual bool FreeStream(IAEStream *stream) = 0;
 
   /**
    * Creates a new IAESound that is ready to play the specified file
@@ -194,18 +180,11 @@ public:
   virtual void EnumerateOutputDevices(AEDeviceList &devices, bool passthrough) = 0;
 
   /**
-   * Returns the default audio device
-   * @param passthrough True if the default passthrough device is wanted
-   * @return the default audio device
-   */
-  virtual std::string GetDefaultDevice(bool passthrough) { return "default"; }
-
-  /**
    * Returns true if the AudioEngine supports AE_FMT_RAW streams for use with formats such as IEC61937
    * @see CAEPackIEC61937::CAEPackIEC61937()
    * @returns true if the AudioEngine is capable of RAW output
    */
-  virtual bool SupportsRaw(AEDataFormat format, int samplerate) { return false; }
+  virtual bool SupportsRaw(AEAudioFormat &format) { return false; }
 
    /**
    * Returns true if the AudioEngine supports drain mode which is not streaming silence when idle
@@ -227,7 +206,7 @@ public:
 
   virtual void RegisterAudioCallback(IAudioCallback* pCallback) {}
 
-  virtual void UnregisterAudioCallback() {}
+  virtual void UnregisterAudioCallback(IAudioCallback* pCallback) {}
 
   /**
    * Returns true if AudioEngine supports specified quality level
@@ -265,4 +244,3 @@ public:
    */
   virtual bool GetCurrentSinkFormat(AEAudioFormat &SinkFormat) { return false; }
 };
-

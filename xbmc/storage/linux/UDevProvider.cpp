@@ -21,9 +21,7 @@
 
 #include "UDevProvider.h"
 
-#ifdef HAVE_LIBUDEV
-
-#include "linux/PosixMountProvider.h"
+#include "platform/linux/PosixMountProvider.h"
 #include "utils/log.h"
 #include "utils/URIUtils.h"
 
@@ -267,9 +265,12 @@ bool CUDevProvider::PumpDriveChangeEvents(IStorageEventsCallback *callback)
           callback->OnStorageSafelyRemoved(label);
         changed = true;
       }
-      if (strcmp(action, "change") == 0)
+      // browse disk dialog is not wanted for blu-rays
+      const char *bd = udev_device_get_property_value(dev, "ID_CDROM_MEDIA_BD");
+      if (strcmp(action, "change") == 0 && !(bd && strcmp(bd, "1") == 0))
       {
-        if (mountpoint)
+        const char *optical = udev_device_get_property_value(dev, "ID_CDROM");
+        if (mountpoint && (optical && strcmp(optical, "1") == 0))
         {
           CLog::Log(LOGNOTICE, "UDev: Changed / Added %s", mountpoint);
           if (callback)
@@ -290,5 +291,3 @@ bool CUDevProvider::PumpDriveChangeEvents(IStorageEventsCallback *callback)
 
   return changed;
 }
-
-#endif

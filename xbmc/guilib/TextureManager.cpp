@@ -1,6 +1,6 @@
 /*
- *      Copyright (C) 2005-2013 Team XBMC
- *      http://xbmc.org
+ *      Copyright (C) 2005-2015 Team Kodi
+ *      http://kodi.tv
  *
  *  This Program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -13,7 +13,7 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with XBMC; see the file COPYING.  If not, see
+ *  along with Kodi; see the file COPYING.  If not, see
  *  <http://www.gnu.org/licenses/>.
  *
  */
@@ -38,12 +38,11 @@
 #ifdef _DEBUG_TEXTURES
 #include "utils/TimeUtils.h"
 #endif
-#if defined(HAS_GIFLIB)
-#include "guilib/Gif.h"
-#endif//HAS_GIFLIB
 #if defined(TARGET_DARWIN_IOS)
-#include "windowing/WindowingFactory.h" // for g_Windowing in CGUITextureManager::FreeUnusedTextures
+#include "ServiceBroker.h"
+#include "windowing/osx/WinSystemIOS.h" // for g_Windowing in CGUITextureManager::FreeUnusedTextures
 #endif
+#include "FFmpegImage.h"
 
 /************************************************************************/
 /*                                                                      */
@@ -64,10 +63,7 @@ CTextureArray::CTextureArray()
   Reset();
 }
 
-CTextureArray::~CTextureArray()
-{
-
-}
+CTextureArray::~CTextureArray() = default;
 
 unsigned int CTextureArray::size() const
 {
@@ -179,7 +175,8 @@ void CTextureMap::Dump() const
   if (!m_referenceCount)
     return;   // nothing to see here
 
-  CLog::Log(LOGDEBUG, "%s: texture:%s has %" PRIuS" frames %i refcount", __FUNCTION__, m_textureName.c_str(), m_texture.m_textures.size(), m_referenceCount);
+  CLog::Log(LOGDEBUG, "{0}: texture:{1} has {2} frames {3} refcount", __FUNCTION__, m_textureName.c_str(),
+    m_texture.m_textures.size(), m_referenceCount);
 }
 
 unsigned int CTextureMap::GetMemoryUsage() const
@@ -199,9 +196,19 @@ void CTextureMap::FreeTexture()
   m_texture.Free();
 }
 
+void CTextureMap::SetHeight(int height)
+{
+  m_texture.m_height = (int) height;
+}
+
+void CTextureMap::SetWidth(int height)
+{
+  m_texture.m_width = height;
+}
+
 bool CTextureMap::IsEmpty() const
 {
-  return m_texture.m_textures.size() == 0;
+  return m_texture.m_textures.empty();
 }
 
 void CTextureMap::Add(CBaseTexture* texture, int delay)
@@ -231,7 +238,7 @@ CGUITextureManager::~CGUITextureManager(void)
 /************************************************************************/
 bool CGUITextureManager::CanLoad(const std::string &texturePath)
 {
-  if (texturePath == "-")
+  if (texturePath.empty())
     return false;
 
   if (!CURL::IsFullPath(texturePath))
@@ -243,10 +250,15 @@ bool CGUITextureManager::CanLoad(const std::string &texturePath)
 
 bool CGUITextureManager::HasTexture(const std::string &textureName, std::string *path, int *bundle, int *size)
 {
+  CSingleLock lock(m_section);
+
   // default values
   if (bundle) *bundle = -1;
   if (size) *size = 0;
   if (path) *path = textureName;
+
+  if (textureName.empty())
+    return false;
 
   if (!CanLoad(textureName))
     return false;
@@ -285,6 +297,10 @@ const CTextureArray& CGUITextureManager::Load(const std::string& strTextureName,
   static CTextureArray emptyTexture;
   int bundle = -1;
   int size = 0;
+
+  if (strTextureName.empty())
+    return emptyTexture;
+
   if (!HasTexture(strTextureName, &strPath, &bundle, &size))
     return emptyTexture;
 
@@ -325,64 +341,97 @@ const CTextureArray& CGUITextureManager::Load(const std::string& strTextureName,
   start = CurrentHostCounter();
 #endif
 
-  if (StringUtils::EndsWithNoCase(strPath, ".gif"))
+  if (bundle >= 0 && StringUtils::EndsWithNoCase(strPath, ".gif"))
   {
     CTextureMap* pMap = nullptr;
-
-    if (bundle >= 0)
+    CBaseTexture **pTextures = nullptr;
+    int nLoops = 0, width = 0, height = 0;
+    int* Delay = nullptr;
+    int nImages = m_TexBundle[bundle].LoadAnim(strTextureName, &pTextures, width, height, nLoops, &Delay);
+    if (!nImages)
     {
-      CBaseTexture **pTextures;
-      int nLoops = 0, width = 0, height = 0;
-      int* Delay;
-      int nImages = m_TexBundle[bundle].LoadAnim(strTextureName, &pTextures, width, height, nLoops, &Delay);
-      if (!nImages)
-      {
-        CLog::Log(LOGERROR, "Texture manager unable to load bundled file: %s", strTextureName.c_str());
-        delete [] pTextures;
-        delete [] Delay;
-        return emptyTexture;
-      }
-
-      pMap = new CTextureMap(strTextureName, width, height, nLoops);
-      for (int iImage = 0; iImage < nImages; ++iImage)
-      {
-        pMap->Add(pTextures[iImage], Delay[iImage]);
-      }
-
-      delete [] pTextures;
-      delete [] Delay;
-    }
-    else
-    {
-#if defined(HAS_GIFLIB)
-      Gif gif;
-      if(!gif.LoadGif(strPath.c_str()))
-      {
-        if (StringUtils::StartsWith(strPath, g_SkinInfo->Path()))
-          CLog::Log(LOGERROR, "Texture manager unable to load file: %s", strPath.c_str());
-        return emptyTexture;
-      }
-
-      pMap = new CTextureMap(strTextureName, gif.Width(), gif.Height(), gif.GetNumLoops());
-
-      for (auto frame : gif.GetFrames())
-      {
-        CTexture *glTexture = new CTexture();
-        if (glTexture)
-        {
-          glTexture->LoadFromMemory(gif.Width(), gif.Height(), gif.GetPitch(), XB_FMT_A8R8G8B8, false, frame->m_pImage);
-          pMap->Add(glTexture, frame->m_delay);
-        }
-      }
-#endif//HAS_GIFLIB
+      CLog::Log(LOGERROR, "Texture manager unable to load bundled file: %s", strTextureName.c_str());
+      delete[] pTextures;
+      delete[] Delay;
+      return emptyTexture;
     }
 
-    if (pMap)
+    unsigned int maxWidth = 0;
+    unsigned int maxHeight = 0;
+    pMap = new CTextureMap(strTextureName, width, height, nLoops);
+    for (int iImage = 0; iImage < nImages; ++iImage)
     {
-      m_vecTextures.push_back(pMap);
-      return pMap->GetTexture();
+      pMap->Add(pTextures[iImage], Delay[iImage]);
+      maxWidth = std::max(maxWidth, pTextures[iImage]->GetWidth());
+      maxHeight = std::max(maxHeight, pTextures[iImage]->GetHeight());
     }
-  } // of if (strPath.Right(4).ToLower()==".gif")
+
+    pMap->SetWidth((int)maxWidth);
+    pMap->SetHeight((int)maxHeight);
+
+    delete[] pTextures;
+    delete[] Delay;
+
+    m_vecTextures.push_back(pMap);
+    return pMap->GetTexture();
+  }
+  else if (StringUtils::EndsWithNoCase(strPath, ".gif") ||
+           StringUtils::EndsWithNoCase(strPath, ".apng"))
+  {
+    std::string mimeType;
+    if (StringUtils::EndsWithNoCase(strPath, ".gif"))
+      mimeType = "image/gif";
+    else if (StringUtils::EndsWithNoCase(strPath, ".apng"))
+      mimeType = "image/apng";
+
+    XFILE::CFile file;
+    XFILE::auto_buffer buf;
+    CFFmpegImage anim(mimeType);
+
+    if (file.LoadFile(strPath, buf) <= 0 ||
+       !anim.Initialize((uint8_t*)buf.get(), buf.size()))
+    {
+      CLog::Log(LOGERROR, "Texture manager unable to load file: %s", CURL::GetRedacted(strPath).c_str());
+      file.Close();
+      return emptyTexture;
+    }
+
+    CTextureMap* pMap = new CTextureMap(strTextureName, 0, 0, 0);
+    unsigned int maxWidth = 0;
+    unsigned int maxHeight = 0;
+    uint64_t maxMemoryUsage = 91238400;// 1920*1080*4*11 bytes, i.e, a total of approx. 12 full hd frames
+
+    auto frame = anim.ReadFrame();
+    while (frame)
+    {
+      CTexture *glTexture = new CTexture();
+      if (glTexture)
+      {
+        glTexture->LoadFromMemory(anim.Width(), anim.Height(), frame->GetPitch(), XB_FMT_A8R8G8B8, true, frame->m_pImage);
+        pMap->Add(glTexture, frame->m_delay);
+        maxWidth = std::max(maxWidth, glTexture->GetWidth());
+        maxHeight = std::max(maxHeight, glTexture->GetHeight());
+      }
+
+      if (pMap->GetMemoryUsage() <= maxMemoryUsage)
+      {
+        frame = anim.ReadFrame();
+      } 
+      else
+      {
+        CLog::Log(LOGDEBUG, "Memory limit (%" PRIu64 " bytes) exceeded, %i frames extracted from file : %s", (maxMemoryUsage/11)*12,pMap->GetTexture().size(), CURL::GetRedacted(strPath).c_str());
+        break;
+      }
+    }
+
+    pMap->SetWidth((int)maxWidth);
+    pMap->SetHeight((int)maxHeight);
+
+    file.Close();
+
+    m_vecTextures.push_back(pMap);
+    return pMap->GetTexture();
+  }
 
   CBaseTexture *pTexture = NULL;
   int width = 0, height = 0;
@@ -469,7 +518,8 @@ void CGUITextureManager::FreeUnusedTextures(unsigned int timeDelay)
   // when XBMC is backgrounded (e.x. for backgrounded music playback)
   // sanity check before delete in that case.
 #if defined(TARGET_DARWIN_IOS)
-    if (!g_Windowing.IsBackgrounded() || glIsTexture(m_unusedHwTextures[i]))
+    CWinSystemIOS& winSystem = dynamic_cast<CWinSystemIOS&>(CServiceBroker::GetWinSystem());
+    if (!winSystem.IsBackgrounded() || glIsTexture(m_unusedHwTextures[i]))
 #endif
       glDeleteTextures(1, (GLuint*) &m_unusedHwTextures[i]);
   }
@@ -496,14 +546,15 @@ void CGUITextureManager::Cleanup()
     delete pMap;
     i = m_vecTextures.erase(i);
   }
-  for (int i = 0; i < 2; i++)
-    m_TexBundle[i].Cleanup();
+
+  m_TexBundle[0] = CTextureBundle(true);
+  m_TexBundle[1] = CTextureBundle();
   FreeUnusedTextures();
 }
 
 void CGUITextureManager::Dump() const
 {
-  CLog::Log(LOGDEBUG, "%s: total texturemaps size:%" PRIuS, __FUNCTION__, m_vecTextures.size());
+  CLog::Log(LOGDEBUG, "{0}: total texturemaps size: {1}", __FUNCTION__, m_vecTextures.size());
 
   for (int i = 0; i < (int)m_vecTextures.size(); ++i)
   {
@@ -581,8 +632,7 @@ std::string CGUITextureManager::GetTexturePath(const std::string &textureName, b
     CSingleLock lock(m_section);
     for (std::vector<std::string>::iterator it = m_texturePaths.begin(); it != m_texturePaths.end(); ++it)
     {
-      std::string path = URIUtils::AddFileToFolder(it->c_str(), "media");
-      path = URIUtils::AddFileToFolder(path, textureName);
+      std::string path = URIUtils::AddFileToFolder(it->c_str(), "media", textureName);
       if (directory)
       {
         if (XFILE::CDirectory::Exists(path))
@@ -595,6 +645,8 @@ std::string CGUITextureManager::GetTexturePath(const std::string &textureName, b
       }
     }
   }
+
+  CLog::Log(LOGDEBUG, "[Warning] CGUITextureManager::GetTexturePath: could not find texture '%s'", textureName.c_str());
   return "";
 }
 

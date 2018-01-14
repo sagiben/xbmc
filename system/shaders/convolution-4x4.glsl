@@ -18,10 +18,18 @@
  *
  */
 
+#ifdef GL_ES
+  precision highp float;
+#endif
+
 uniform sampler2D img;
 uniform vec2      stepxy;
 uniform float     m_stretch;
 varying vec2      cord;
+
+#ifdef GL_ES
+  uniform float     m_alpha;
+#endif
 
 #if (USE1DTEXTURE)
   uniform sampler1D kernelTex;
@@ -81,8 +89,9 @@ half3 line (float ypos, vec4 xpos, half4 linetaps)
     pixel(xpos.a, ypos) * linetaps.a;
 }
 
-void main()
+vec4 process()
 {
+  vec4 rgb;
   vec2 pos = stretch(cord) + stepxy * 0.5;
   vec2 f = fract(pos / stepxy);
 
@@ -96,12 +105,18 @@ void main()
   vec2 xystart = (-1.5 - f) * stepxy + pos;
   vec4 xpos = vec4(xystart.x, xystart.x + stepxy.x, xystart.x + stepxy.x * 2.0, xystart.x + stepxy.x * 3.0);
 
-  gl_FragColor.rgb =
+  rgb.rgb =
     line(xystart.y                 , xpos, linetaps) * columntaps.r +
     line(xystart.y + stepxy.y      , xpos, linetaps) * columntaps.g +
     line(xystart.y + stepxy.y * 2.0, xpos, linetaps) * columntaps.b +
     line(xystart.y + stepxy.y * 3.0, xpos, linetaps) * columntaps.a;
 
-  gl_FragColor.a = gl_Color.a;
+#ifdef GL_ES
+  rgb.a = m_alpha;
+#else
+  rgb.a = gl_Color.a;
+#endif
+
+  return rgb;
 }
 

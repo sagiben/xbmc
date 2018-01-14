@@ -1,6 +1,8 @@
+#pragma once
+
 /*
- *      Copyright (C) 2005-2013 Team XBMC
- *      http://xbmc.org
+ *      Copyright (C) 2005-2015 Team Kodi
+ *      http://kodi.tv
  *
  *  This Program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -13,16 +15,11 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with XBMC; see the file COPYING.  If not, see
+ *  along with Kodi; see the file COPYING.  If not, see
  *  <http://www.gnu.org/licenses/>.
  *
  */
 
-#pragma once
-
-#ifdef TARGET_WINDOWS
-#ifndef _WIN32_POWER_SYSCALL_H_
-#define _WIN32_POWER_SYSCALL_H_
 #include "powermanagement/IPowerSyscall.h"
 #include "powermanagement/PowerManager.h"
 #include "threads/Event.h"
@@ -40,6 +37,8 @@ protected:
   virtual void OnStartup() { SetPriority(THREAD_PRIORITY_IDLE); };
 
 private:
+  static bool PowerManagement(PowerState State);
+
   std::atomic<PowerState> m_state;
   CEvent                  m_queryEvent;
 };
@@ -74,5 +73,3 @@ private:
   static bool m_OnSuspend;
 
 };
-#endif
-#endif

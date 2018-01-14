@@ -36,9 +36,9 @@ public:
     SUBTITLE
   };
 
-  CStreamDetail(StreamType type) : m_eType(type), m_pParent(NULL) {};
-  virtual void Archive(CArchive& ar);
-  virtual void Serialize(CVariant& value) const;
+  explicit CStreamDetail(StreamType type) : m_eType(type), m_pParent(NULL) {};
+  void Archive(CArchive& ar) override;
+  void Serialize(CVariant& value) const override;
   virtual bool IsWorseThan(CStreamDetail *that) { return true; };
 
   const StreamType m_eType;
@@ -52,9 +52,9 @@ class CStreamDetailVideo : public CStreamDetail
 {
 public:
   CStreamDetailVideo();
-  virtual void Archive(CArchive& ar);
-  virtual void Serialize(CVariant& value) const;
-  virtual bool IsWorseThan(CStreamDetail *that);
+  void Archive(CArchive& ar) override;
+  void Serialize(CVariant& value) const override;
+  bool IsWorseThan(CStreamDetail *that) override;
 
   int m_iWidth;
   int m_iHeight;
@@ -62,15 +62,16 @@ public:
   int m_iDuration;
   std::string m_strCodec;
   std::string m_strStereoMode;
+  std::string m_strLanguage;
 };
 
 class CStreamDetailAudio : public CStreamDetail
 {
 public:
   CStreamDetailAudio();
-  virtual void Archive(CArchive& ar);
-  virtual void Serialize(CVariant& value) const;
-  virtual bool IsWorseThan(CStreamDetail *that);
+  void Archive(CArchive& ar) override;
+  void Serialize(CVariant& value) const override;
+  bool IsWorseThan(CStreamDetail *that) override;
 
   int m_iChannels;
   std::string m_strCodec;
@@ -82,9 +83,9 @@ class CStreamDetailSubtitle : public CStreamDetail
 public:
   CStreamDetailSubtitle();
   CStreamDetailSubtitle& operator=(const CStreamDetailSubtitle &that);
-  virtual void Archive(CArchive& ar);
-  virtual void Serialize(CVariant& value) const;
-  virtual bool IsWorseThan(CStreamDetail *that);
+  void Archive(CArchive& ar) override;
+  void Serialize(CVariant& value) const override;
+  bool IsWorseThan(CStreamDetail *that) override;
 
   std::string m_strLanguage;
 };
@@ -94,7 +95,7 @@ class CStreamDetails : public IArchivable, public ISerializable
 public:
   CStreamDetails() { Reset(); };
   CStreamDetails(const CStreamDetails &that);
-  ~CStreamDetails() { Reset(); };
+  ~CStreamDetails() override { Reset(); };
   CStreamDetails& operator=(const CStreamDetails &that);
   bool operator ==(const CStreamDetails &that) const;
   bool operator !=(const CStreamDetails &that) const;
@@ -116,6 +117,7 @@ public:
   int GetVideoDuration(int idx = 0) const;
   void SetVideoDuration(int idx, const int duration);
   std::string GetStereoMode(int idx = 0) const;
+  std::string GetVideoLanguage(int idx = 0) const;
 
   std::string GetAudioCodec(int idx = 0) const;
   std::string GetAudioLanguage(int idx = 0) const;
@@ -127,8 +129,8 @@ public:
   void Reset(void);
   void DetermineBestStreams(void);
 
-  virtual void Archive(CArchive& ar);
-  virtual void Serialize(CVariant& value) const;
+  void Archive(CArchive& ar) override;
+  void Serialize(CVariant& value) const override;
 
 private:
   CStreamDetail *NewStream(CStreamDetail::StreamType type);

@@ -22,7 +22,7 @@
 
 #include "CoreAudioHelpers.h"
 #include "utils/log.h"
-#include "osx/DarwinUtils.h"
+#include "platform/darwin/DarwinUtils.h"
 
 bool CCoreAudioHardware::GetAutoHogMode()
 {
@@ -66,7 +66,7 @@ void CCoreAudioHardware::ResetAudioDevices()
   {
     for (CoreAudioDeviceList::iterator it = list.begin(); it != list.end(); ++it)
     {
-      CCoreAudioDevice device = *it;
+      CCoreAudioDevice device(*it);
 
       AudioStreamIdList streams;
       if (device.GetStreams(&streams))

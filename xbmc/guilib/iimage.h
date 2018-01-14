@@ -25,7 +25,7 @@ class IImage
 public:
 
   IImage():m_width(0), m_height(0), m_originalWidth(0), m_originalHeight(0), m_orientation(0), m_hasAlpha(false) {};
-  virtual ~IImage() {};
+  virtual ~IImage() = default;
 
   /*!
    \brief Load an image from memory with the format m_strMimeType to determine it's size and orientation
@@ -39,6 +39,8 @@ public:
   /*!
    \brief Decodes the previously loaded image data to the output buffer in 32 bit raw bits
    \param pixels The output buffer
+   \param width The width of the image
+   \param height The height of the image
    \param pitch The pitch of the output buffer
    \param format The format of the output buffer (JpegIO only)
    \return true if the image data could be decoded to the output buffer

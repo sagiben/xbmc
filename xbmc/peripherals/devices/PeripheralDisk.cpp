@@ -23,8 +23,8 @@
 
 using namespace PERIPHERALS;
 
-CPeripheralDisk::CPeripheralDisk(const PeripheralScanResult& scanResult) :
-  CPeripheral(scanResult)
+CPeripheralDisk::CPeripheralDisk(CPeripherals& manager, const PeripheralScanResult& scanResult, CPeripheralBus* bus) :
+  CPeripheral(manager, scanResult, bus)
 {
   m_strDeviceName = scanResult.m_strDeviceName.empty() ? g_localizeStrings.Get(35003) : scanResult.m_strDeviceName;
   m_features.push_back(FEATURE_DISK);

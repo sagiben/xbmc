@@ -20,6 +20,7 @@
 
 
 #include "GUIDialogSimpleMenu.h"
+#include "ServiceBroker.h"
 #include "guilib/GUIWindowManager.h"
 #include "GUIDialogSelect.h"
 #include "settings/DiscSettings.h"
@@ -34,11 +35,7 @@
 
 bool CGUIDialogSimpleMenu::ShowPlaySelection(CFileItem& item)
 {
-  /* if asked to resume somewhere, we should not show anything */
-  if (item.m_lStartOffset || (item.HasVideoInfoTag() && item.GetVideoInfoTag()->m_iBookmarkId > 0))
-    return true;
-
-  if (CSettings::GetInstance().GetInt(CSettings::SETTING_DISC_PLAYBACK) != BD_PLAYBACK_SIMPLE_MENU)
+  if (CServiceBroker::GetSettings().GetInt(CSettings::SETTING_DISC_PLAYBACK) != BD_PLAYBACK_SIMPLE_MENU)
     return true;
 
   std::string path;
@@ -95,7 +92,7 @@ bool CGUIDialogSimpleMenu::ShowPlaySelection(CFileItem& item, const std::string&
     return true;
   }
 
-  CGUIDialogSelect* dialog = (CGUIDialogSelect*)g_windowManager.GetWindow(WINDOW_DIALOG_SELECT);
+  CGUIDialogSelect* dialog = g_windowManager.GetWindow<CGUIDialogSelect>(WINDOW_DIALOG_SELECT);
   while (true)
   {
     dialog->Reset();
@@ -104,8 +101,8 @@ bool CGUIDialogSimpleMenu::ShowPlaySelection(CFileItem& item, const std::string&
     dialog->SetUseDetails(true);
     dialog->Open();
 
-    CFileItemPtr item_new = dialog->GetSelectedItem();
-    if (!item_new || dialog->GetSelectedLabel() < 0)
+    CFileItemPtr item_new = dialog->GetSelectedFileItem();
+    if (!item_new || dialog->GetSelectedItem() < 0)
     {
       CLog::Log(LOGDEBUG, "CGUIWindowVideoBase::ShowPlaySelection - User aborted %s", directory.c_str());
       break;

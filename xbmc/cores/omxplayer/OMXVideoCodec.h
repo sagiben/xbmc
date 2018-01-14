@@ -45,7 +45,7 @@ struct OMXCoreVideoBuffer;
 // should be entirely filled by all codecs
 struct DVDVideoPicture
 {
-  double pts; // timestamp in seconds, used in the CDVDPlayer class to keep track of pts
+  double pts; // timestamp in seconds, used in the CVideoPlayer class to keep track of pts
   double dts;
 
   union
@@ -177,16 +177,6 @@ public:
    */
   virtual bool GetPicture(DVDVideoPicture* pDvdVideoPicture) = 0;
 
-
-  /*
-   * returns true if successfull
-   * the data is cleared to zero
-   */ 
-  virtual bool ClearPicture(DVDVideoPicture* pDvdVideoPicture)
-  {
-    memset(pDvdVideoPicture, 0, sizeof(DVDVideoPicture));
-    return true;
-  }
 
   /*
    * returns true if successfull

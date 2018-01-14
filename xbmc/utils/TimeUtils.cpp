@@ -23,10 +23,6 @@
 #include "threads/SystemClock.h"
 #include "guilib/GraphicContext.h"
 
-#if (defined HAVE_CONFIG_H) && (!defined TARGET_WINDOWS)
-  #include "config.h"
-#endif
-
 #if   defined(TARGET_DARWIN)
 #include <mach/mach_time.h>
 #include <CoreVideo/CVHostTime.h>
@@ -35,8 +31,6 @@
 #else
 #include <time.h>
 #endif
-
-#include "TimeSmoother.h"
 
 int64_t CurrentHostCounter(void)
 {
@@ -70,28 +64,18 @@ int64_t CurrentHostFrequency(void)
 #endif
 }
 
-CTimeSmoother CTimeUtils::frameTimer;
 unsigned int CTimeUtils::frameTime = 0;
 
-void CTimeUtils::UpdateFrameTime(bool flip, bool vsync)
+void CTimeUtils::UpdateFrameTime(bool flip)
 {
   unsigned int currentTime = XbmcThreads::SystemClockMillis();
-  if (vsync)
+  unsigned int last = frameTime;
+  while (frameTime < currentTime)
   {
-    unsigned int last = frameTime;
-    while (frameTime < currentTime)
-    {
-      frameTime += (unsigned int)(1000 / g_graphicsContext.GetFPS());
-      // observe wrap around
-      if (frameTime < last)
-        break;
-    }
-  }
-  else
-  {
-    if (flip)
-      frameTimer.AddTimeStamp(currentTime);
-    frameTime = frameTimer.GetNextFrameTime(currentTime);
+    frameTime += (unsigned int)(1000 / g_graphicsContext.GetFPS());
+    // observe wrap around
+    if (frameTime < last)
+      break;
   }
 }
 

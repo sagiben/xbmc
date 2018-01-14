@@ -21,8 +21,8 @@
 /**
  * \file utils\Environment.cpp
  * \brief Implements CEnvironment class functions.
- *  
- *  Some ideas were inspired by PostgreSQL's pgwin32_putenv function. 
+ *
+ *  Some ideas were inspired by PostgreSQL's pgwin32_putenv function.
  *  Refined, updated, enhanced and modified for XBMC by Karlson2k.
  */
 
@@ -30,13 +30,17 @@
 #include <stdlib.h>
 #ifdef TARGET_WINDOWS
 #include <Windows.h>
+#ifdef TARGET_WINDOWS_STORE
+using namespace Windows::Storage;
+using namespace Windows::Foundation;
+#endif
 #endif
 
 // --------------------- Helper Functions ---------------------
 
 #ifdef TARGET_WINDOWS
 
-std::wstring CEnvironment::win32ConvertUtf8ToW(const std::string &text, bool *resultSuccessful /* = NULL*/)  
+std::wstring CEnvironment::win32ConvertUtf8ToW(const std::string &text, bool *resultSuccessful /* = NULL*/)
 {
   if (text.empty())
   {
@@ -65,7 +69,7 @@ std::wstring CEnvironment::win32ConvertUtf8ToW(const std::string &text, bool *re
   return Wret;
 }
 
-std::string CEnvironment::win32ConvertWToUtf8(const std::wstring &text, bool *resultSuccessful /*= NULL*/)  
+std::string CEnvironment::win32ConvertWToUtf8(const std::wstring &text, bool *resultSuccessful /*= NULL*/)
 {
   if (text.empty())
   {
@@ -88,7 +92,7 @@ std::string CEnvironment::win32ConvertWToUtf8(const std::wstring &text, bool *re
 
   std::string ret(converted);
   delete[] converted;
-  
+
   if (resultSuccessful != NULL)
     *resultSuccessful = true;
   return ret;
@@ -102,7 +106,7 @@ typedef int (_cdecl * wputenvPtr) (const wchar_t *envstring);
  * \fn int CEnvironment::win32_setenv(const std::wstring &name, const std::wstring &value = L"",
  *     updateAction action = autoDetect)
  * \brief Internal function used to manipulate with environment variables on win32.
- * 		  
+ *
  * This function make all dirty work with setting, deleting and modifying environment variables.
  *
  * \param name   The environment variable name.
@@ -112,6 +116,48 @@ typedef int (_cdecl * wputenvPtr) (const wchar_t *envstring);
  * 		   environment update failed, 8 if our runtime environment update failed or, in case of
  * 		   several errors, sum of all errors values; non-zero in case of other errors.
  */
+#ifdef TARGET_WINDOWS_STORE
+int CEnvironment::win10_setenv(const std::string &name, const std::string &value /* = "" */, enum updateAction action /* = autoDetect */)
+{
+  std::wstring Wname(win32ConvertUtf8ToW(name));
+  if (Wname.empty() || name.find('=') != std::wstring::npos)
+    return -1;
+  if ((action == addOnly || action == addOrUpdateOnly) && value.empty())
+    return -1;
+  if (action == addOnly && !(getenv(name).empty()))
+    return 0;
+
+  bool convIsOK;
+  std::wstring Wvalue(win32ConvertUtf8ToW(value, &convIsOK));
+  if (!convIsOK)
+    return -1;
+
+  int retValue = 0;
+
+  ApplicationDataContainer^ localSettings = ApplicationData::Current->LocalSettings;
+  auto values = localSettings->Values;
+
+  Platform::String^ key = ref new Platform::String(Wname.c_str());
+  Platform::String^ v = ref new Platform::String(Wvalue.c_str());
+
+  switch (action)
+  {
+  case deleteVariable:
+    if (values->HasKey(key))
+    {
+      values->Remove(key);
+    }
+    retValue = 0;
+    break;
+
+  default:
+    retValue = values->Insert(key, v) ? 0 : 4;
+    break;
+  }
+
+  return retValue;
+}
+#else
 int CEnvironment::win32_setenv(const std::string &name, const std::string &value /* = "" */, enum updateAction action /* = autoDetect */)
 {
   std::wstring Wname (win32ConvertUtf8ToW(name));
@@ -155,9 +201,15 @@ int CEnvironment::win32_setenv(const std::string &name, const std::string &value
 #ifdef _DEBUG
     { L"msvcr120d.dll" },// Visual Studio 2013 (debug)
 #endif
+    { L"vcruntime140.dll" },
+    { L"ucrtbase.dll" },
+#ifdef _DEBUG
+    { L"vcruntime140d.dll" },
+    { L"ucrtbased.dll" },
+#endif
     { NULL }             // Terminating NULL for list
   };
-  
+
   // Check all modules each function run, because modules can be loaded/unloaded at runtime
   for (int i = 0; modulesList[i]; i++)
   {
@@ -176,19 +228,21 @@ int CEnvironment::win32_setenv(const std::string &name, const std::string &value
     retValue += SetEnvironmentVariableW(Wname.c_str(), NULL) ? 0 : 4; // 4 if failed
   else
     retValue += SetEnvironmentVariableW(Wname.c_str(), Wvalue.c_str()) ? 0 : 4; // 4 if failed
-  
+
   // Finally update our runtime Environment
   retValue += (::_wputenv(EnvString.c_str()) == 0) ? 0 : 8; // 8 if failed
-  
   return retValue;
 }
+#endif
 #endif
 
 // --------------------- Main Functions ---------------------
 
 int CEnvironment::setenv(const std::string &name, const std::string &value, int overwrite /*= 1*/)
 {
-#ifdef TARGET_WINDOWS
+#ifdef TARGET_WINDOWS_STORE
+  return (win10_setenv(name, value, overwrite ? autoDetect : addOnly) == 0) ? 0 : -1;
+#elif defined(TARGET_WINDOWS_DESKTOP)
   return (win32_setenv(name, value, overwrite ? autoDetect : addOnly)==0) ? 0 : -1;
 #else
   if (value.empty() && overwrite != 0)
@@ -197,6 +251,32 @@ int CEnvironment::setenv(const std::string &name, const std::string &value, int 
 #endif
 }
 
+#ifdef TARGET_WINDOWS_STORE
+std::string CEnvironment::getenv(const std::string &name)
+{
+  std::string result;
+
+  // check key
+  if (name.empty())
+  {
+    return "";
+  }
+
+  std::wstring Wname(win32ConvertUtf8ToW(name));
+  Platform::String^ key = ref new Platform::String(Wname.c_str());
+
+  ApplicationDataContainer^ localSettings = ApplicationData::Current->LocalSettings;
+  auto values = localSettings->Values;
+
+  if (values->HasKey(key))
+  {
+    auto value = safe_cast<Platform::String^>(values->Lookup(key));
+    result = win32ConvertWToUtf8(std::wstring(value->Data()));
+  }
+
+  return "";
+}
+#else
 std::string CEnvironment::getenv(const std::string &name)
 {
 #ifdef TARGET_WINDOWS
@@ -208,7 +288,7 @@ std::string CEnvironment::getenv(const std::string &name)
   if (wStr != NULL)
     return win32ConvertWToUtf8(wStr);
 
-  // Not found in Environment of runtime library 
+  // Not found in Environment of runtime library
   // Try Environment of process as fallback
   unsigned int varSize = GetEnvironmentVariableW(Wname.c_str(), NULL, 0);
   if (varSize == 0)
@@ -230,10 +310,13 @@ std::string CEnvironment::getenv(const std::string &name)
   return str;
 #endif
 }
+#endif
 
 int CEnvironment::unsetenv(const std::string &name)
 {
-#ifdef TARGET_WINDOWS
+#ifdef TARGET_WINDOWS_STORE
+  return (win10_setenv(name, "", deleteVariable)) == 0 ? 0 : -1;
+#elif defined(TARGET_WINDOWS_DESKTOP)
   return (win32_setenv(name, "", deleteVariable)) == 0 ? 0 : -1;
 #else
   return ::unsetenv(name.c_str());

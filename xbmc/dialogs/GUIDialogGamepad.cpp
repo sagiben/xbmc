@@ -23,15 +23,17 @@
 #include "utils/StringUtils.h"
 #include "guilib/GUIAudioManager.h"
 #include "guilib/GUIWindowManager.h"
-#include "GUIDialogOK.h"
 #include "input/Key.h"
 #include "guilib/LocalizeStrings.h"
+#include "messaging/helpers/DialogOKHelper.h"
 #include "utils/Variant.h"
 
 #include <utility>
 
+using namespace KODI::MESSAGING;
+
 CGUIDialogGamepad::CGUIDialogGamepad(void)
-    : CGUIDialogBoxBase(WINDOW_DIALOG_GAMEPAD, "DialogOK.xml")
+    : CGUIDialogBoxBase(WINDOW_DIALOG_GAMEPAD, "DialogConfirm.xml")
 {
   m_bCanceled = false;
   m_iRetries = 0;
@@ -40,13 +42,14 @@ CGUIDialogGamepad::CGUIDialogGamepad(void)
   m_cHideInputChar = '*';
 }
 
-CGUIDialogGamepad::~CGUIDialogGamepad(void)
-{}
+CGUIDialogGamepad::~CGUIDialogGamepad(void) = default;
 
 void CGUIDialogGamepad::OnInitWindow()
 {
-  // hide ok button from DialogOK
-  SET_CONTROL_HIDDEN(10);
+  // hide all controls
+  for (int i = 0; i < DIALOG_MAX_CHOICES; ++i)
+    SET_CONTROL_HIDDEN(CONTROL_CHOICES_START + i);
+  SET_CONTROL_HIDDEN(CONTROL_PROGRESS_BAR);
 
   CGUIDialogBoxBase::OnInitWindow();
 }
@@ -206,8 +209,8 @@ bool CGUIDialogGamepad::ShowAndVerifyNewPassword(std::string& strNewPassword)
   std::string strUserInput;
   if (ShowAndVerifyInput(strUserInput, "12340", "12330", "12331", "", true, true))
   {
-    // TODO: Show error to user saying the password entry was blank
-    CGUIDialogOK::ShowAndGetInput(CVariant{12357}, CVariant{12358}); // Password is empty/blank
+    //! @todo Show error to user saying the password entry was blank
+    HELPERS::ShowOKDialogText(CVariant{12357}, CVariant{12358}); // Password is empty/blank
     return false;
   }
 
@@ -218,8 +221,8 @@ bool CGUIDialogGamepad::ShowAndVerifyNewPassword(std::string& strNewPassword)
   // Prompt again for password input, this time sending previous input as the password to verify
   if (!ShowAndVerifyInput(strUserInput, "12341", "12330", "12331", "", false, true))
   {
-    // TODO: Show error to user saying the password re-entry failed
-    CGUIDialogOK::ShowAndGetInput(CVariant{12357}, CVariant{12344}); // Password do not match
+    //! @todo Show error to user saying the password re-entry failed
+    HELPERS::ShowOKDialogText(CVariant{12357}, CVariant{12344}); // Password do not match
     return false;
   }
 
@@ -272,7 +275,7 @@ bool CGUIDialogGamepad::ShowAndVerifyInput(std::string& strToVerify, const std::
     const std::string& dlgLine2, bool bGetUserInput, bool bHideInputChars)
 {
   // Prompt user for password input
-  CGUIDialogGamepad *pDialog = (CGUIDialogGamepad *)g_windowManager.GetWindow(WINDOW_DIALOG_GAMEPAD);
+  CGUIDialogGamepad *pDialog = g_windowManager.GetWindow<CGUIDialogGamepad>(WINDOW_DIALOG_GAMEPAD);
   pDialog->m_strPassword = strToVerify;
   pDialog->m_bUserInputCleanup = !bGetUserInput;
   pDialog->m_bHideInputChars = bHideInputChars;

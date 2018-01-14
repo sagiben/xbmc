@@ -44,11 +44,11 @@ class CDetectDVDMedia : public CThread
 {
 public:
   CDetectDVDMedia();
-  virtual ~CDetectDVDMedia();
+  ~CDetectDVDMedia() override;
 
-  virtual void OnStartup();
-  virtual void OnExit();
-  virtual void Process();
+  void OnStartup() override;
+  void OnExit() override;
+  void Process() override;
 
   static void WaitMediaReady();
   static bool IsDiscInDrive();
@@ -80,7 +80,6 @@ private:
   bool m_bStartup;
   bool m_bAutorun;
   DWORD m_dwTrayState;
-  DWORD m_dwTrayCount;
   DWORD m_dwLastTrayState;
 
   static std::string m_diskLabel;

@@ -20,36 +20,59 @@
 
 #include "RepositoryUpdater.h"
 #include "Application.h"
-#include "GUIUserMessages.h"
+#include "ServiceBroker.h"
 #include "addons/AddonInstaller.h"
 #include "addons/AddonManager.h"
+#include "addons/AddonSystemSettings.h"
 #include "dialogs/GUIDialogExtendedProgressBar.h"
 #include "dialogs/GUIDialogKaiToast.h"
+#include "events/AddonManagementEvent.h"
+#include "events/EventLog.h"
 #include "guilib/GUIWindowManager.h"
+#include "guilib/LocalizeStrings.h"
 #include "settings/Settings.h"
 #include "threads/SingleLock.h"
 #include "utils/JobManager.h"
 #include "utils/log.h"
 #include <algorithm>
+#include <iterator>
 #include <vector>
 
 namespace ADDON
 {
 
-CRepositoryUpdater::CRepositoryUpdater() :
+CRepositoryUpdater::CRepositoryUpdater(CAddonMgr& addonMgr) :
   m_timer(this),
-  m_doneEvent(true)
-{}
-
-CRepositoryUpdater &CRepositoryUpdater::GetInstance()
+  m_doneEvent(true),
+  m_addonMgr(addonMgr)
 {
-  static CRepositoryUpdater instance;
-  return instance;
+  // Register settings
+  std::set<std::string> settingSet;
+  settingSet.insert(CSettings::SETTING_ADDONS_AUTOUPDATES);
+  CServiceBroker::GetSettings().RegisterCallback(this, settingSet);
 }
 
 void CRepositoryUpdater::Start()
 {
+  m_addonMgr.Events().Subscribe(this, &CRepositoryUpdater::OnEvent);
   ScheduleUpdate();
+}
+
+CRepositoryUpdater::~CRepositoryUpdater()
+{
+  // Unregister settings
+  CServiceBroker::GetSettings().UnregisterCallback(this);
+
+  m_addonMgr.Events().Unsubscribe(this);
+}
+
+void CRepositoryUpdater::OnEvent(const ADDON::AddonEvent& event)
+{
+  if (typeid(event) == typeid(ADDON::AddonEvents::Enabled))
+  {
+    if (m_addonMgr.HasType(event.id, ADDON_REPOSITORY))
+      ScheduleUpdate();
+  }
 }
 
 void CRepositoryUpdater::OnJobComplete(unsigned int jobID, bool success, CJob* job)
@@ -61,46 +84,55 @@ void CRepositoryUpdater::OnJobComplete(unsigned int jobID, bool success, CJob* j
     CLog::Log(LOGDEBUG, "CRepositoryUpdater: done.");
     m_doneEvent.Set();
 
-    if (CSettings::GetInstance().GetInt(CSettings::SETTING_GENERAL_ADDONUPDATES) == AUTO_UPDATES_NOTIFY)
+    VECADDONS updates = m_addonMgr.GetAvailableUpdates();
+
+    if (CServiceBroker::GetSettings().GetInt(CSettings::SETTING_ADDONS_AUTOUPDATES) == AUTO_UPDATES_NOTIFY)
     {
-      VECADDONS hasUpdate = CAddonMgr::GetInstance().GetOutdated();
-      if (!hasUpdate.empty())
+      if (!updates.empty())
       {
-        if (hasUpdate.size() == 1)
+        if (updates.size() == 1)
           CGUIDialogKaiToast::QueueNotification(
-              hasUpdate[0]->Icon(), hasUpdate[0]->Name(), g_localizeStrings.Get(24068),
+              updates[0]->Icon(), updates[0]->Name(), g_localizeStrings.Get(24068),
               TOAST_DISPLAY_TIME, false, TOAST_DISPLAY_TIME);
         else
           CGUIDialogKaiToast::QueueNotification(
               "", g_localizeStrings.Get(24001), g_localizeStrings.Get(24061),
               TOAST_DISPLAY_TIME, false, TOAST_DISPLAY_TIME);
+
+        for (const auto &addon : updates)
+          CEventLog::GetInstance().Add(EventPtr(new CAddonManagementEvent(addon, 24068)));
       }
     }
 
-    if (CSettings::GetInstance().GetInt(CSettings::SETTING_GENERAL_ADDONUPDATES) == AUTO_UPDATES_ON)
+    if (CServiceBroker::GetSettings().GetInt(CSettings::SETTING_ADDONS_AUTOUPDATES) == AUTO_UPDATES_ON)
+    {
       CAddonInstaller::GetInstance().InstallUpdates();
+    }
 
     ScheduleUpdate();
 
-    CGUIMessage msg(GUI_MSG_NOTIFY_ALL, 0, 0, GUI_MSG_UPDATE);
-    g_windowManager.SendThreadMessage(msg);
+    m_events.Publish(RepositoryUpdated{});
   }
 }
 
-void CRepositoryUpdater::CheckForUpdates(bool showProgress)
+bool CRepositoryUpdater::CheckForUpdates(bool showProgress)
 {
   VECADDONS addons;
-  if (CAddonMgr::GetInstance().GetAddons(ADDON_REPOSITORY, addons) && !addons.empty())
+  if (m_addonMgr.GetAddons(addons, ADDON_REPOSITORY) && !addons.empty())
   {
     CSingleLock lock(m_criticalSection);
     for (const auto& addon : addons)
       CheckForUpdates(std::static_pointer_cast<ADDON::CRepository>(addon), showProgress);
+
+    return true;
   }
+
+  return false;
 }
 
 static void SetProgressIndicator(CRepositoryUpdateJob* job)
 {
-  auto* dialog = static_cast<CGUIDialogExtendedProgressBar*>(g_windowManager.GetWindow(WINDOW_DIALOG_EXT_PROGRESS));
+  auto dialog = g_windowManager.GetWindow<CGUIDialogExtendedProgressBar>(WINDOW_DIALOG_EXT_PROGRESS);
   if (dialog)
     job->SetProgressIndicators(dialog->GetHandle(g_localizeStrings.Get(24092)), nullptr);
 }
@@ -118,7 +150,7 @@ void CRepositoryUpdater::CheckForUpdates(const ADDON::RepositoryPtr& repo, bool 
     m_doneEvent.Reset();
     if (showProgress)
       SetProgressIndicator(job);
-    CJobManager::GetInstance().AddJob(job, this, CJob::PRIORITY_LOW_PAUSABLE);
+    CJobManager::GetInstance().AddJob(job, this, CJob::PRIORITY_LOW);
   }
   else
   {
@@ -134,20 +166,30 @@ void CRepositoryUpdater::Await()
 
 void CRepositoryUpdater::OnTimeout()
 {
+  //workaround
+  if (g_windowManager.GetActiveWindow() == WINDOW_FULLSCREEN_VIDEO ||
+      g_windowManager.GetActiveWindow() == WINDOW_FULLSCREEN_GAME ||
+      g_windowManager.GetActiveWindow() == WINDOW_SLIDESHOW)
+  {
+    CLog::Log(LOGDEBUG,"CRepositoryUpdater: busy playing. postponing scheduled update");
+    m_timer.RestartAsync(2 * 60 * 1000);
+    return;
+  }
+
   CLog::Log(LOGDEBUG,"CRepositoryUpdater: running scheduled update");
   CheckForUpdates();
 }
 
-void CRepositoryUpdater::OnSettingChanged(const CSetting* setting)
+void CRepositoryUpdater::OnSettingChanged(std::shared_ptr<const CSetting> setting)
 {
-  if (setting->GetId() == CSettings::SETTING_GENERAL_ADDONUPDATES)
+  if (setting->GetId() == CSettings::SETTING_ADDONS_AUTOUPDATES)
     ScheduleUpdate();
 }
 
 CDateTime CRepositoryUpdater::LastUpdated() const
 {
   VECADDONS repos;
-  if (!CAddonMgr::GetInstance().GetAddons(ADDON_REPOSITORY, repos) || repos.empty())
+  if (!m_addonMgr.GetAddons(repos, ADDON_REPOSITORY) || repos.empty())
     return CDateTime();
 
   CAddonDatabase db;
@@ -172,10 +214,10 @@ void CRepositoryUpdater::ScheduleUpdate()
   CSingleLock lock(m_criticalSection);
   m_timer.Stop(true);
 
-  if (CSettings::GetInstance().GetInt(CSettings::SETTING_GENERAL_ADDONUPDATES) == AUTO_UPDATES_NEVER)
+  if (CServiceBroker::GetSettings().GetInt(CSettings::SETTING_ADDONS_AUTOUPDATES) == AUTO_UPDATES_NEVER)
     return;
 
-  if (!CAddonMgr::GetInstance().HasAddons(ADDON_REPOSITORY))
+  if (!m_addonMgr.HasAddons(ADDON_REPOSITORY))
     return;
 
   auto prev = LastUpdated();

@@ -28,7 +28,6 @@
 #define CONTROL_HEADING 1
 #define CONTROL_LINES_START 2
 #define CONTROL_TEXTBOX     9
-#define CONTROL_CHOICES_START 10
 
 CGUIDialogBoxBase::CGUIDialogBoxBase(int id, const std::string &xmlFile)
     : CGUIDialog(id, xmlFile)
@@ -38,9 +37,7 @@ CGUIDialogBoxBase::CGUIDialogBoxBase(int id, const std::string &xmlFile)
   m_hasTextbox = false;
 }
 
-CGUIDialogBoxBase::~CGUIDialogBoxBase(void)
-{
-}
+CGUIDialogBoxBase::~CGUIDialogBoxBase(void) = default;
 
 bool CGUIDialogBoxBase::OnMessage(CGUIMessage& message)
 {

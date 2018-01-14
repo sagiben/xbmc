@@ -32,24 +32,20 @@ namespace ADDON
 class CImageResource : public CResource
 {
 public:
-  CImageResource(const AddonProps &props)
-    : CResource(props)
-  { }
-  CImageResource(const cp_extension_t *ext);
-  virtual ~CImageResource() { }
+  static std::unique_ptr<CImageResource> FromExtension(CAddonInfo addonInfo, const cp_extension_t* ext);
 
-  virtual AddonPtr Clone() const;
-  virtual void OnPreUnInstall();
+  explicit CImageResource(CAddonInfo addonInfo) : CResource(std::move(addonInfo)) {};
+  CImageResource(CAddonInfo addonInfo, std::string type);
 
-  virtual bool IsAllowed(const std::string &file) const;
-  virtual std::string GetFullPath(const std::string &filePath) const;
+  void OnPreUnInstall() override;
+
+  bool IsAllowed(const std::string &file) const override;
+  std::string GetFullPath(const std::string &filePath) const override;
 
   //! \brief Returns type of image collection
   const std::string& GetType() const { return m_type; }
 
 private:
-  CImageResource(const CImageResource &rhs);
-
   bool HasXbt(CURL& xbtUrl) const;
 
   std::string m_type; //!< Type of images

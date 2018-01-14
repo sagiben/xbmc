@@ -1,6 +1,6 @@
 /*
- *      Copyright (C) 2011-2013 Team XBMC
- *      http://xbmc.org
+ *      Copyright (C) 2011-2015 Team Kodi
+ *      http://kodi.tv
  *
  *  This Program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -13,28 +13,29 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with XBMC; see the file COPYING.  If not, see
+ *  along with Kodi; see the file COPYING.  If not, see
  *  <http://www.gnu.org/licenses/>.
  *
  */
 
 #include "FavouritesOperations.h"
-#include "filesystem/FavouritesDirectory.h"
-#include "input/ButtonTranslator.h"
+#include "favourites/FavouritesService.h"
+#include "input/WindowTranslator.h"
 #include "utils/StringUtils.h"
 #include "Util.h"
 #include "utils/URIUtils.h"
 #include "utils/Variant.h"
 #include "guilib/WindowIDs.h"
+#include "ServiceBroker.h"
+
 #include <vector>
 
 using namespace JSONRPC;
-using namespace XFILE;
 
 JSONRPC_STATUS CFavouritesOperations::GetFavourites(const std::string &method, ITransportLayer *transport, IClient *client, const CVariant &parameterObject, CVariant &result)
 {
   CFileItemList favourites;
-  CFavouritesDirectory::Load(favourites);
+  CServiceBroker::GetFavouritesService().GetAll(favourites);
   
   std::string type = !parameterObject["type"].isNull() ? parameterObject["type"].asString() : "";
 
@@ -53,7 +54,7 @@ JSONRPC_STATUS CFavouritesOperations::GetFavourites(const std::string &method, I
     std::string function;
     std::vector<std::string> parameters;
     CUtil::SplitExecFunction(item->GetPath(), function, parameters);
-    if (parameters.size() == 0)
+    if (parameters.empty())
       continue;
 
     object["title"] = item->GetLabel();
@@ -66,7 +67,7 @@ JSONRPC_STATUS CFavouritesOperations::GetFavourites(const std::string &method, I
       if (fields.find("window") != fields.end())
       {
         if (StringUtils::IsNaturalNumber(parameters[0]))
-          object["window"] = CButtonTranslator::TranslateWindow(strtol(parameters[0].c_str(), NULL, 10));
+          object["window"] = CWindowTranslator::TranslateWindow(strtol(parameters[0].c_str(), NULL, 10));
         else
           object["window"] = parameters[0];
       }
@@ -136,7 +137,7 @@ JSONRPC_STATUS CFavouritesOperations::AddFavourite(const std::string &method, IT
   if (type.compare("window") == 0)
   {
     item = CFileItem(parameterObject["windowparameter"].asString(), true);
-    contextWindow = CButtonTranslator::TranslateWindow(parameterObject["window"].asString());
+    contextWindow = CWindowTranslator::TranslateWindow(parameterObject["window"].asString());
     if (contextWindow == WINDOW_INVALID)
       return InvalidParams;
   } 
@@ -157,7 +158,7 @@ JSONRPC_STATUS CFavouritesOperations::AddFavourite(const std::string &method, IT
   if (ParameterNotNull(parameterObject,"thumbnail"))
     item.SetArt("thumb", parameterObject["thumbnail"].asString());
 
-  if (CFavouritesDirectory::AddOrRemove(&item, contextWindow))
+  if (CServiceBroker::GetFavouritesService().AddOrRemove(item, contextWindow))
     return ACK;
   else
     return FailedToExecute;

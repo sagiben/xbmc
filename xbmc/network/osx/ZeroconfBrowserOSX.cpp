@@ -26,7 +26,7 @@
 #include "guilib/GUIMessage.h"
 #include "threads/SingleLock.h"
 #include "utils/log.h"
-#include "osx/DarwinUtils.h"
+#include "platform/darwin/DarwinUtils.h"
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -121,7 +121,7 @@ namespace
 
 CZeroconfBrowserOSX::CZeroconfBrowserOSX():m_runloop(0)
 {
-  //aquire the main threads event loop
+  //acquire the main threads event loop
   m_runloop = CFRunLoopGetMain();
 }
 

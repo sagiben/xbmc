@@ -55,10 +55,10 @@ bool GroupUtils::Group(GroupBy groupBy, const std::string &baseDir, const CFileI
 
     // group by sets
     if ((groupBy & GroupBySet) &&
-      item->HasVideoInfoTag() && item->GetVideoInfoTag()->m_iSetId > 0)
+      item->HasVideoInfoTag() && item->GetVideoInfoTag()->m_set.id > 0)
     {
       ungrouped = false;
-      setMap[item->GetVideoInfoTag()->m_iSetId].insert(item);
+      setMap[item->GetVideoInfoTag()->m_set.id].insert(item);
     }
 
     if (ungrouped)
@@ -80,7 +80,7 @@ bool GroupUtils::Group(GroupBy groupBy, const std::string &baseDir, const CFileI
         continue;
       }
 
-      CFileItemPtr pItem(new CFileItem((*set->second.begin())->GetVideoInfoTag()->m_strSet));
+      CFileItemPtr pItem(new CFileItem((*set->second.begin())->GetVideoInfoTag()->m_set.title));
       pItem->GetVideoInfoTag()->m_iDbId = set->first;
       pItem->GetVideoInfoTag()->m_type = MediaTypeVideoCollection;
 
@@ -98,24 +98,25 @@ bool GroupUtils::Group(GroupBy groupBy, const std::string &baseDir, const CFileI
       CVideoInfoTag* setInfo = pItem->GetVideoInfoTag();
       setInfo->m_strPath = pItem->GetPath();
       setInfo->m_strTitle = pItem->GetLabel();
-      setInfo->m_strPlot = (*set->second.begin())->GetVideoInfoTag()->m_strSetOverview;
+      setInfo->m_strPlot = (*set->second.begin())->GetVideoInfoTag()->m_set.overview;
 
       int ratings = 0;
+      float totalRatings = 0;
       int iWatched = 0; // have all the movies been played at least once?
       std::set<std::string> pathSet;
       for (std::set<CFileItemPtr>::const_iterator movie = set->second.begin(); movie != set->second.end(); ++movie)
       {
         CVideoInfoTag* movieInfo = (*movie)->GetVideoInfoTag();
         // handle rating
-        if (movieInfo->m_fRating > 0.0f)
+        if (movieInfo->GetRating().rating > 0.0f)
         {
           ratings++;
-          setInfo->m_fRating += movieInfo->m_fRating;
+          totalRatings += movieInfo->GetRating().rating;
         }
 
         // handle year
-        if (movieInfo->m_iYear > setInfo->m_iYear)
-          setInfo->m_iYear = movieInfo->m_iYear;
+        if (movieInfo->GetYear() > setInfo->GetYear())
+          setInfo->SetYear(movieInfo->GetYear());
 
         // handle lastplayed
         if (movieInfo->m_lastPlayed.IsValid() && movieInfo->m_lastPlayed > setInfo->m_lastPlayed)
@@ -126,8 +127,8 @@ bool GroupUtils::Group(GroupBy groupBy, const std::string &baseDir, const CFileI
           setInfo->m_dateAdded = movieInfo->m_dateAdded;
 
         // handle playcount/watched
-        setInfo->m_playCount += movieInfo->m_playCount;
-        if (movieInfo->m_playCount > 0)
+        setInfo->SetPlayCount(setInfo->GetPlayCount() + movieInfo->GetPlayCount());
+        if (movieInfo->GetPlayCount() > 0)
           iWatched++;
 
         //accumulate the path for a multipath construction
@@ -140,13 +141,13 @@ bool GroupUtils::Group(GroupBy groupBy, const std::string &baseDir, const CFileI
       setInfo->m_basePath = XFILE::CMultiPathDirectory::ConstructMultiPath(pathSet);
 
       if (ratings > 1)
-        pItem->GetVideoInfoTag()->m_fRating /= ratings;
+        pItem->GetVideoInfoTag()->SetRating(totalRatings / ratings);
 
-      setInfo->m_playCount = iWatched >= (int)set->second.size() ? (setInfo->m_playCount / set->second.size()) : 0;
+      setInfo->SetPlayCount(iWatched >= static_cast<int>(set->second.size()) ? (setInfo->GetPlayCount() / set->second.size()) : 0);
       pItem->SetProperty("total", (int)set->second.size());
       pItem->SetProperty("watched", iWatched);
       pItem->SetProperty("unwatched", (int)set->second.size() - iWatched);
-      pItem->SetOverlayImage(CGUIListItem::ICON_OVERLAY_UNWATCHED, setInfo->m_playCount > 0);
+      pItem->SetOverlayImage(CGUIListItem::ICON_OVERLAY_UNWATCHED, setInfo->GetPlayCount() > 0);
 
       groupedItems.Add(pItem);
     }

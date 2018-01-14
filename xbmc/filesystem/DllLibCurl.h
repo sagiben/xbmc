@@ -34,7 +34,7 @@ namespace XCURL
   class DllLibCurlInterface
   {
   public:
-    virtual ~DllLibCurlInterface() {}
+    virtual ~DllLibCurlInterface() = default;
     virtual CURLcode global_init(long flags)=0;
     virtual void global_cleanup(void)=0;
     virtual CURL_HANDLE * easy_init(void)=0;
@@ -52,9 +52,14 @@ namespace XCURL
     virtual CURLMcode multi_fdset(CURLM *multi_handle, fd_set *read_fd_set, fd_set *write_fd_set, fd_set *exc_fd_set, int *max_fd)=0;
     virtual CURLMcode multi_timeout(CURLM *multi_handle, long *timeout)=0;
     virtual CURLMsg*  multi_info_read(CURLM *multi_handle, int *msgs_in_queue)=0;
-    virtual void multi_cleanup(CURL_HANDLE * handle )=0;
+    virtual CURLMcode multi_cleanup(CURLM * handle )=0;
     virtual struct curl_slist* slist_append(struct curl_slist *, const char *)=0;
     virtual void  slist_free_all(struct curl_slist *)=0;
+    virtual const char* easy_strerror(CURLcode)=0;
+#if defined(HAS_CURL_STATIC)
+    virtual void crypto_set_id_callback(unsigned long (*)(void))=0;
+    virtual void crypto_set_locking_callback(void (*)(int, int, const char*, int))=0;
+#endif
   };
 
   class DllLibCurl : public DllDynamic, DllLibCurlInterface
@@ -77,7 +82,7 @@ namespace XCURL
     DEFINE_METHOD5(CURLMcode, multi_fdset, (CURLM *p1, fd_set *p2, fd_set *p3, fd_set *p4, int *p5))
     DEFINE_METHOD2(CURLMcode, multi_timeout, (CURLM *p1, long *p2))
     DEFINE_METHOD2(CURLMsg*,  multi_info_read, (CURLM *p1, int *p2))
-    DEFINE_METHOD1(void, multi_cleanup, (CURLM *p1))
+    DEFINE_METHOD1(CURLMcode, multi_cleanup, (CURLM *p1))
     DEFINE_METHOD2(struct curl_slist*, slist_append, (struct curl_slist * p1, const char * p2))
     DEFINE_METHOD1(void, slist_free_all, (struct curl_slist * p1))
     DEFINE_METHOD1(const char *, easy_strerror, (CURLcode p1))
@@ -119,15 +124,15 @@ namespace XCURL
   {
   public:
     /* extend interface with buffered functions */
-    void easy_aquire(const char *protocol, const char *hostname, CURL_HANDLE** easy_handle, CURLM** multi_handle);
+    void easy_acquire(const char *protocol, const char *hostname, CURL_HANDLE** easy_handle, CURLM** multi_handle);
     void easy_release(CURL_HANDLE** easy_handle, CURLM** multi_handle);
     void easy_duplicate(CURL_HANDLE* easy, CURLM* multi, CURL_HANDLE** easy_out, CURLM** multi_out);
-    CURL_HANDLE* easy_duphandle(CURL_HANDLE* easy_handle);
+    CURL_HANDLE* easy_duphandle(CURL_HANDLE* easy_handle) override;
     void CheckIdle();
 
     /* overloaded load and unload with reference counter */
-    virtual bool Load();
-    virtual void Unload();
+    bool Load() override;
+    void Unload() override;
 
     /* structure holding a session info */
     typedef struct SSession

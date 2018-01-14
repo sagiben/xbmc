@@ -33,11 +33,6 @@
 #include "threads/CriticalSection.h"
 #include "windowing/WinEvents.h"
 
-typedef struct {
-  int32_t id;
-  std::string name;
-} APP_InputDevice;
-
 class CWinEventsAndroid : public IWinEvents, public CThread
 {
 public:
@@ -47,9 +42,10 @@ public:
   void            MessagePush(XBMC_Event *newEvent);
   void            MessagePushRepeat(XBMC_Event *repeatEvent);
   bool            MessagePump();
-  virtual size_t  GetQueueSize();
 
 private:
+  size_t          GetQueueSize();
+
   // for CThread
   virtual void    Process();
 
@@ -58,8 +54,6 @@ private:
 
   CCriticalSection             m_lasteventCond;
   std::queue<XBMC_Event>       m_lastevent;
-
-  std::vector<APP_InputDevice> m_input_devices;
 };
 
 #endif // WINDOW_EVENTS_ANDROID_H

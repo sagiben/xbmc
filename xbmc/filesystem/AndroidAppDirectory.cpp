@@ -22,7 +22,7 @@
 
 #if defined(TARGET_ANDROID)
 #include "AndroidAppDirectory.h"
-#include "xbmc/android/activity/XBMCApp.h"
+#include "platform/android/activity/XBMCApp.h"
 #include "FileItem.h"
 #include "File.h"
 #include "utils/URIUtils.h"
@@ -49,7 +49,7 @@ bool CAndroidAppDirectory::GetDirectory(const CURL& url, CFileItemList &items)
   CLog::Log(LOGDEBUG, "CAndroidAppDirectory::GetDirectory: %s",dirname.c_str()); 
   std::string appName = CCompileInfo::GetAppName();
   StringUtils::ToLower(appName);
-  std::string className = "org.xbmc." + appName;
+  std::string className = CCompileInfo::GetPackage();
 
   if (dirname == "apps")
   {

@@ -24,18 +24,23 @@
 # define sampler2D sampler2DRect
 #endif
 
+#ifdef GL_ES
+  precision mediump float;
+#endif
+
 uniform sampler2D m_sampY;
 uniform sampler2D m_sampU;
 uniform sampler2D m_sampV;
 varying vec2      m_cordY;
 varying vec2      m_cordU;
 varying vec2      m_cordV;
-
 uniform vec2      m_step;
-
 uniform mat4      m_yuvmat;
-
 uniform float     m_stretch;
+
+#ifdef GL_ES
+  uniform float     m_alpha;
+#endif
 
 vec2 stretch(vec2 pos)
 {
@@ -55,31 +60,40 @@ vec2 stretch(vec2 pos)
 #endif
 }
 
-void main()
+vec4 process()
 {
+  vec4 rgb;
 #if defined(XBMC_YV12) || defined(XBMC_NV12)
 
-  vec4 yuv, rgb;
+  vec4 yuv;
   yuv.rgba = vec4( texture2D(m_sampY, stretch(m_cordY)).r
                  , texture2D(m_sampU, stretch(m_cordU)).g
                  , texture2D(m_sampV, stretch(m_cordV)).a
                  , 1.0 );
 
   rgb   = m_yuvmat * yuv;
+
+#ifdef GL_ES
+  rgb.a = m_alpha;
+#else
   rgb.a = gl_Color.a;
-  gl_FragColor = rgb;
+#endif
 
-#elif defined(XBMC_VDPAU_NV12)
+#elif defined(XBMC_NV12_RRG)
 
-  vec4 yuv, rgb;
+  vec4 yuv;
   yuv.rgba = vec4( texture2D(m_sampY, stretch(m_cordY)).r
                  , texture2D(m_sampU, stretch(m_cordU)).r
                  , texture2D(m_sampV, stretch(m_cordV)).g
                  , 1.0 );
 
   rgb   = m_yuvmat * yuv;
+
+#ifdef GL_ES
+  rgb.a = m_alpha;
+#else
   rgb.a = gl_Color.a;
-  gl_FragColor = rgb;
+#endif
 
 #elif defined(XBMC_YUY2) || defined(XBMC_UYVY)
 
@@ -116,10 +130,16 @@ void main()
   float outY    = mix(leftY, rightY, step(0.5, f.x));
 
   vec4  yuv     = vec4(outY, outUV, 1.0);
-  vec4  rgb     = m_yuvmat * yuv;
+  rgb           = m_yuvmat * yuv;
 
-  gl_FragColor   = rgb;
-  gl_FragColor.a = gl_Color.a;
+#ifdef GL_ES
+  rgb.a = m_alpha;
+#else
+  rgb.a = gl_Color.a;
+#endif
 
 #endif
+
+  return rgb;
 }
+
